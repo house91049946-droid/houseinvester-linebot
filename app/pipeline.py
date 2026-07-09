@@ -226,10 +226,26 @@ class ProcessingPipeline:
             "listing_type": extracted.listing_type,
             "property_type": extracted.property_type,
             "price_wan": extracted.price_wan,
+            "unit_price_wan_per_ping": extracted.unit_price_wan_per_ping,
             "size_ping": extracted.size_ping,
+            "floor": extracted.floor,
+            "rooms": extracted.rooms,
             "address": extracted.address,
+            "community": extracted.community,
+            "has_parking": extracted.has_parking,
+            "has_furniture": extracted.has_furniture,
+            "deposit": extracted.deposit,
+            "management_fee": extracted.management_fee,
+            "description": text,
             "confidence": extracted.confidence,
+            "contact_name": self._extract_contact_name(text),
+            "contact_phone": self._extract_contact_phone(text),
+            "contact_line": self._extract_contact_line(text),
+            "contact_agency": self._extract_contact_agency(text),
         }
+
+        # 儲存文字聯絡資訊
+        self._save_contact_from_text(listing, text)
 
         return result
 
@@ -548,5 +564,79 @@ class ProcessingPipeline:
         except Exception as e:
             session.rollback()
             logger.error(f"儲存聯絡資訊失敗: {e}")
+        finally:
+            session.close()
+
+    # ─── 文字訊息聯絡資訊萃取 ───
+
+    @staticmethod
+    def _extract_contact_name(text: str) -> str | None:
+        """從文字擷取聯絡人姓名"""
+        m = re.search(r'(?:聯絡|聯繫|聯絡人|屋主|仲介|專員|經紀人)\s*[:：]?\s*([\u4e00-\u9fff]{2,4})', text)
+        if m:
+            return m.group(1)
+        return None
+
+    @staticmethod
+    def _extract_contact_phone(text: str) -> str | None:
+        """從文字擷取電話號碼"""
+        # 09xx-xxx-xxx or 09xxxxxxxxx
+        m = re.search(r'(?:電話|手機|聯絡|聯繫)?\s*[:：]?\s*(09\d{2}[-\s]?\d{3}[-\s]?\d{3})', text)
+        if m:
+            return re.sub(r'[-\s]', '', m.group(1))
+        # 純 09xx 號碼
+        m = re.search(r'(09\d{2}[-\s]?\d{3}[-\s]?\d{3})', text)
+        if m:
+            return re.sub(r'[-\s]', '', m.group(1))
+        return None
+
+    @staticmethod
+    def _extract_contact_line(text: str) -> str | None:
+        """從文字擷取 LINE ID"""
+        m = re.search(r'(?:LINE|line)\s*[:：]\s*([a-zA-Z0-9_.@\-]+)', text)
+        if m:
+            return m.group(1)
+        return None
+
+    @staticmethod
+    def _extract_contact_agency(text: str) -> str | None:
+        """從文字擷取房仲公司"""
+        agencies = [
+            "永慶房屋", "信義房屋", "住商不動產", "台灣房屋",
+            "中信房屋", "東森房屋", "21世紀", "有巢氏",
+            "太平洋房屋", "群義房屋", "大家房屋",
+        ]
+        for a in agencies:
+            if a in text:
+                return a
+        return None
+
+    def _save_contact_from_text(self, listing, text: str):
+        """從文字訊息儲存聯絡資訊"""
+        contact_data = {
+            "name": self._extract_contact_name(text),
+            "phone": self._extract_contact_phone(text),
+            "line_id": self._extract_contact_line(text),
+            "company": self._extract_contact_agency(text),
+        }
+        if not any(contact_data.values()):
+            return
+
+        from app.models import ContactInfo
+        session = self.Session()
+        try:
+            existing = (
+                session.query(ContactInfo)
+                .filter(ContactInfo.listing_id == listing.id)
+                .first()
+            )
+            if existing:
+                return
+            contact = ContactInfo(listing_id=listing.id, **contact_data)
+            session.add(contact)
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            logger.error(f"儲存文字聯絡資訊失敗: {e}")
         finally:
             session.close()
