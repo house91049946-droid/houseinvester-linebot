@@ -591,13 +591,14 @@ def health():
 def debug_db():
     """檢查資料庫連線狀態和實際連線資訊"""
     import os
+    pg_conn = os.getenv("POSTGRES_CONNECTION_STRING", "")
     info = {
-        "DATABASE_URL": config.DATABASE_URL[:50] + "..." if len(config.DATABASE_URL) > 50 else config.DATABASE_URL,
+        "DATABASE_URL": config.DATABASE_URL[:80] + "..." if len(config.DATABASE_URL) > 80 else config.DATABASE_URL,
         "db_type": "PostgreSQL" if "postgres" in config.DATABASE_URL else "SQLite",
-        "postgres_host": os.getenv("POSTGRES_HOST", "未設定"),
+        "env_POSTGRES_CONNECTION_STRING": pg_conn[:80] if pg_conn else "未設定",
+        "env_POSTGRES_HOST": os.getenv("POSTGRES_HOST", "未設定"),
         "app_connected": True,
     }
-    # 試寫一筆測試資料確認可讀寫
     session = Session()
     try:
         from sqlalchemy import text

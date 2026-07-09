@@ -20,7 +20,13 @@ class Config:
         explicit = os.getenv("DATABASE_URL", "")
         if explicit and "postgres" in explicit:
             return explicit
-        # Zeabur PostgreSQL 服務自動注入的環境變數
+
+        # Zeabur 內建 PostgreSQL 會注入 POSTGRES_CONNECTION_STRING
+        pg_conn_str = os.getenv("POSTGRES_CONNECTION_STRING", "")
+        if pg_conn_str and "postgresql://" in pg_conn_str:
+            return pg_conn_str
+
+        # 舊版 Zeabur 或手動設定的獨立環境變數
         pg_host = os.getenv("POSTGRES_HOST", "")
         if pg_host:
             pg_user = os.getenv("POSTGRES_USERNAME", "postgres")
@@ -28,7 +34,15 @@ class Config:
             pg_port = os.getenv("POSTGRES_PORT", "5432")
             pg_db   = os.getenv("POSTGRES_DATABASE", "postgres")
             return f"postgresql://{pg_user}:{pg_pass}@{pg_host}:{pg_port}/{pg_db}"
-        # fallback: 本地 SQLite
+
+        # 容器環境但無法連 PostgreSQL → 報錯，防止靜默 fallback SQLite
+        if os.getenv("PORT") or os.getenv("ZEABUR"):
+            raise RuntimeError(
+                "容器環境偵測不到 PostgreSQL 連線！"
+                "請確認 Zeabur 已在此服務內新增 PostgreSQL。"
+            )
+
+        # 本機開發：SQLite
         return explicit or "sqlite:///data/housing.db"
 
     DATABASE_URL: str = field(default_factory=_build_db_url)
