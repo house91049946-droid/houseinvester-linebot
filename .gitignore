@@ -1,0 +1,30 @@
+# 環境變數（含敏感憑證）
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# 虛擬環境
+venv/
+.venv/
+
+# 資料庫與圖片暫存
+data/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Jupyter
+.ipynb_checkpoints/
