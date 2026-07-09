@@ -330,6 +330,9 @@ class ProcessingPipeline:
             duplicate_of_id=dup_of_id if is_dup else None,
         )
 
+        # 儲存 OCR 文字中萃取到的聯絡資訊
+        self._save_contact_from_text(listing, ocr_text)
+
         if is_dup:
             return None
 
@@ -339,13 +342,22 @@ class ProcessingPipeline:
             "listing_type": extracted.listing_type,
             "property_type": extracted.property_type,
             "price_wan": extracted.price_wan,
+            "unit_price_wan_per_ping": extracted.unit_price_wan_per_ping,
             "size_ping": extracted.size_ping,
+            "floor": extracted.floor,
+            "rooms": extracted.rooms,
             "address": extracted.address,
+            "community": extracted.community,
+            "has_parking": extracted.has_parking,
+            "has_furniture": extracted.has_furniture,
+            "deposit": extracted.deposit,
+            "management_fee": extracted.management_fee,
+            "description": ocr_text,
             "confidence": extracted.confidence,
-            "contact_name": None,
-            "contact_phone": None,
-            "contact_line": None,
-            "contact_agency": None,
+            "contact_name": self._extract_contact_name(ocr_text),
+            "contact_phone": self._extract_contact_phone(ocr_text),
+            "contact_line": self._extract_contact_line(ocr_text),
+            "contact_agency": self._extract_contact_agency(ocr_text),
             "image_path": image_path if image_path else None,
         }
 
@@ -418,8 +430,16 @@ class ProcessingPipeline:
             "listing_type": extracted.listing_type,
             "property_type": extracted.property_type,
             "price_wan": extracted.price_wan,
+            "unit_price_wan_per_ping": gpt.get("unit_price_wan_per_ping"),
             "size_ping": extracted.size_ping,
+            "floor": extracted.floor,
+            "rooms": extracted.rooms,
             "address": extracted.address,
+            "community": extracted.community,
+            "has_parking": extracted.has_parking,
+            "has_furniture": extracted.has_furniture,
+            "deposit": extracted.deposit,
+            "management_fee": extracted.management_fee,
             "confidence": extracted.confidence,
             "contact_name": gpt.get("contact_name"),
             "contact_phone": gpt.get("contact_phone"),
