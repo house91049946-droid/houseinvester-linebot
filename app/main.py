@@ -614,6 +614,29 @@ def debug_db():
     return info
 
 
+@app.route("/api/debug/recent-users", methods=["GET"])
+def debug_recent_users():
+    """列出最近訊息的發送者 ID"""
+    session = Session()
+    try:
+        from sqlalchemy import text
+        result = session.execute(text(
+            "SELECT DISTINCT user_id, MIN(created_at) as first_seen, MAX(created_at) as last_seen "
+            "FROM raw_messages WHERE user_id IS NOT NULL "
+            "GROUP BY user_id ORDER BY last_seen DESC LIMIT 20"
+        ))
+        users = []
+        for row in result:
+            users.append({
+                "user_id": row[0],
+                "first_seen": row[1].isoformat() if row[1] else None,
+                "last_seen": row[2].isoformat() if row[2] else None,
+            })
+        return {"count": len(users), "users": users}
+    finally:
+        session.close()
+
+
 @app.route("/dashboard", methods=["GET"])
 def dashboard():
     """數據看板"""
