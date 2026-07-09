@@ -36,13 +36,16 @@ class Config:
             pg_db   = os.getenv("POSTGRES_DATABASE", "postgres")
             return f"postgresql://{pg_user}:{pg_pass}@{pg_host}:{pg_port}/{pg_db}"
 
-        # 4) 容器環境但沒 PostgreSQL → 暫時 fallback SQLite 並記錄（讓 deploy 不 crash）
+        # 4) 容器環境但沒 PostgreSQL → 報錯（防止靜默 fallback SQLite）
         if os.getenv("PORT") or os.getenv("ZEABUR"):
-            print("[WARN] 容器環境偵測不到 PostgreSQL，暫時 fallback SQLite")
-            print(f"  DATABASE_URL={explicit[:60] if explicit else '未設定'}")
-            print(f"  POSTGRES_CONNECTION_STRING={pg_conn_str[:60] if pg_conn_str else '未設定'}")
+            raise RuntimeError(
+                "偵測到容器環境但未偵測到 PostgreSQL 連線資訊！"
+                "請在 Zeabur Dashboard 將 PostgreSQL 服務連結到此 app。"
+                f"\nDEBUG: DATABASE_URL={explicit[:50] if explicit else '未設定'}"
+                f"\nDEBUG: POSTGRES_CONNECTION_STRING={pg_conn_str[:50] if pg_conn_str else '未設定'}"
+            )
 
-        # 5) 本機開發或 fallback：SQLite
+        # 5) 本機開發：SQLite
         return explicit or "sqlite:///data/housing.db"
 
     DATABASE_URL: str = field(default_factory=_build_db_url)
