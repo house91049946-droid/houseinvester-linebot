@@ -175,17 +175,28 @@ def _process_and_notify(message_id, group_id, user_id, text, event,
                 message_id=message_id, group_id=group_id,
                 user_id=user_id, image_url=image_url, raw_payload=event,
             )
+            results = [result] if result else []
         else:
-            result = await pipeline.process_text_message(
-                message_id=message_id, group_id=group_id,
-                user_id=user_id, text=text, raw_payload=event,
-            )
+            # 一則訊息可能含多筆案件 → 先拆分
+            cases = pipeline.split_multi_case(text)
+            logger.info(f"訊息拆分: {len(cases)} 筆案件片段")
+            results = []
+            for idx, case_text in enumerate(cases):
+                # 為每筆案件生成唯一 message_id（原始ID + 序號）
+                case_msg_id = f"{message_id}#{idx}" if idx > 0 else message_id
+                result = await pipeline.process_text_message(
+                    message_id=case_msg_id, group_id=group_id,
+                    user_id=user_id, text=case_text, raw_payload=event,
+                )
+                if result:
+                    results.append(result)
 
-        if result:
+        # 發送通知
+        for result in results:
             logger.info(f"案件萃取成功: {json.dumps(result, ensure_ascii=False)}")
             if reporter and result.get("category") in ("new_listing", "sold"):
                 await reporter.notify_new_listing(result)
-        return result
+        return results
 
     return run_async(_run())
 

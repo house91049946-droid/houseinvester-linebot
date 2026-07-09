@@ -17,6 +17,114 @@ from app.deduplicator import Deduplicator
 logger = logging.getLogger(__name__)
 
 
+def split_multi_case(text: str) -> list[str]:
+    """
+    將一則包含多筆案件的訊息拆成個別案件文字。
+    支援格式：
+    - 甲:(買賣件...)  /  乙:(租件...)  /  丙:...
+    - 1.(買賣...)  /  2.(租...)
+    - 雙換行分隔 + 地址偵測
+
+    Returns:
+        拆分後的案件文字列表（每個元素是一筆獨立案件）。
+        若無法拆分則回傳 [text]（單一案件）。
+    """
+    if not text or len(text) < 20:
+        return [text]
+
+    # ── 策略 1: 天干編號拆分（甲-癸） ──
+    gan = r'[甲乙丙丁戊己庚辛壬癸]'
+    pattern = rf'(?:^|\n)\s*({gan})\s*[、，,:：.．]\s*'
+
+    matches = list(re.finditer(pattern, text))
+    if len(matches) >= 2:
+        # 找出共享聯絡資訊（在所有案件之後）
+        shared_footer = ""
+        last_end = matches[-1].end()
+        footer_text = text[last_end:].strip()
+        # 聯絡資訊的行：聯絡:xxx 或 LINE:xxx
+        contact_lines = []
+        for line in footer_text.split('\n'):
+            line = line.strip()
+            if re.search(r'(聯絡|聯繫|電話|手機|LINE|line)\s*[:：]', line):
+                contact_lines.append(line)
+        if contact_lines:
+            shared_footer = '\n'.join(contact_lines)
+
+        parts = []
+        for i, m in enumerate(matches):
+            start = m.end()
+            end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+            case_text = text[start:end].strip()
+            # 去除末尾可能殘留的聯絡資訊行（避免重複）
+            if shared_footer:
+                for cl in contact_lines:
+                    case_text = case_text.replace(cl, "")
+                case_text = case_text.strip()
+                if case_text:
+                    case_text += '\n' + shared_footer
+            if case_text and len(case_text) >= 10:
+                parts.append(case_text)
+
+        if len(parts) >= 2:
+            logger.info(f"天干編號拆分: {len(parts)} 筆案件")
+            return parts
+
+    # ── 策略 2: 數字編號拆分（1. 2. 3. 或 ① ② ③） ──
+    num_pattern = r'(?:^|\n)\s*(\d+|[①②③④⑤⑥⑦⑧⑨⑩])\s*[、，,:：.．]\s*'
+    matches = list(re.finditer(num_pattern, text))
+    if len(matches) >= 2:
+        # 過濾太短的匹配（避免把價格中的數字當作編號）
+        valid_matches = []
+        for m in matches:
+            after = text[m.end():m.end() + 50]
+            # 每個編號後面必須有房產相關關鍵字
+            if re.search(r'[路街巷號段]|萬|坪|房|廳|租金', after):
+                valid_matches.append(m)
+        if len(valid_matches) >= 2:
+            parts = []
+            # 找出共享聯絡資訊
+            shared_footer = ""
+            last_end = valid_matches[-1].end()
+            footer_text = text[last_end:].strip()
+            contact_lines = [
+                l.strip() for l in footer_text.split('\n')
+                if re.search(r'(聯絡|聯繫|電話|手機|LINE|line)\s*[:：]', l.strip())
+            ]
+            if contact_lines:
+                shared_footer = '\n'.join(contact_lines)
+
+            for i, m in enumerate(valid_matches):
+                start = m.end()
+                end = valid_matches[i + 1].start() if i + 1 < len(valid_matches) else len(text)
+                case_text = text[start:end].strip()
+                if shared_footer:
+                    for cl in contact_lines:
+                        case_text = case_text.replace(cl, "")
+                    case_text = case_text.strip()
+                    if case_text:
+                        case_text += '\n' + shared_footer
+                if case_text and len(case_text) >= 10:
+                    parts.append(case_text)
+
+            if len(parts) >= 2:
+                logger.info(f"數字編號拆分: {len(parts)} 筆案件")
+                return parts
+
+    # ── 策略 3: 雙換行拆分 + 地址偵測 ──
+    blocks = re.split(r'\n\s*\n', text)
+    if len(blocks) >= 2:
+        address_blocks = [
+            b.strip() for b in blocks
+            if len(b.strip()) >= 10 and re.search(r'[\u4e00-\u9fff]{2,}[路街巷]', b)
+        ]
+        if len(address_blocks) >= 2:
+            logger.info(f"雙換行地址拆分: {len(address_blocks)} 筆案件")
+            return address_blocks
+
+    return [text]  # 無法拆分，原樣傳回
+
+
 class ProcessingPipeline:
     """訊息處理管線"""
 
@@ -25,6 +133,11 @@ class ProcessingPipeline:
         self.deduplicator = Deduplicator(session_factory)
         self.normalizer = TextNormalizer()
         self.reporter = reporter  # 報表回報引擎 (可選)
+
+    @staticmethod
+    def split_multi_case(text: str) -> list[str]:
+        """將一則包含多筆案件的訊息拆成個別案件（代理到模組層級函數）"""
+        return split_multi_case(text)
 
     async def process_text_message(
         self,
