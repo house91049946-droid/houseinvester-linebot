@@ -14,15 +14,13 @@ class Config:
     LINE_CHANNEL_SECRET: str = os.getenv("LINE_CHANNEL_SECRET", "")
     LINE_CHANNEL_ACCESS_TOKEN: str = os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "")
 
-    # Database（Zeabur PostgreSQL 強制連線，不 fallback SQLite）
+    # Database（自動偵測 PostgreSQL > SQLite）
     @staticmethod
     def _build_db_url() -> str:
-        import sys
         explicit = os.getenv("DATABASE_URL", "")
         if explicit and "postgres" in explicit:
             return explicit
-
-        # Zeabur 環境變數
+        # Zeabur PostgreSQL 服務自動注入的環境變數
         pg_host = os.getenv("POSTGRES_HOST", "")
         if pg_host:
             pg_user = os.getenv("POSTGRES_USERNAME", "postgres")
@@ -30,15 +28,7 @@ class Config:
             pg_port = os.getenv("POSTGRES_PORT", "5432")
             pg_db   = os.getenv("POSTGRES_DATABASE", "postgres")
             return f"postgresql://{pg_user}:{pg_pass}@{pg_host}:{pg_port}/{pg_db}"
-
-        # 本地開發：僅 SQLite
-        # 若在容器環境（PORT 被設定）卻沒有 PostgreSQL，直接報錯
-        if os.getenv("PORT") or os.getenv("ZEABUR"):
-            raise RuntimeError(
-                "偵測到容器環境但未設定 PostgreSQL 連線！"
-                "請在 Zeabur Service 中新增 PostgreSQL 並設定環境變數。"
-            )
-
+        # fallback: 本地 SQLite
         return explicit or "sqlite:///data/housing.db"
 
     DATABASE_URL: str = field(default_factory=_build_db_url)
