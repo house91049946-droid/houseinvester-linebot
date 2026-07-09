@@ -486,6 +486,8 @@ def debug_messages():
             entry = {
                 "message_id": r.message_id,
                 "type": r.message_type,
+                "user_id": r.user_id,
+                "group_id": r.group_id,
                 "text_preview": (r.text_content or r.ocr_text or "")[:80 if not raw else -1],
                 "created_at": r.created_at.isoformat() if r.created_at else None,
                 "has_listing": listing is not None,
