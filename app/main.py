@@ -7,6 +7,7 @@ import sys
 import json
 import logging
 import asyncio
+import threading
 from pathlib import Path
 
 from flask import Flask, request, abort
@@ -80,9 +81,20 @@ def line_callback():
     except json.JSONDecodeError:
         abort(400)
 
+    # 🚀 非同步處理：每個事件在背景執行緒處理，立即回 200 給 LINE
+    # 避免 GPT Vision 耗時導致 LINE webhook timeout（~5 秒）
+    thread_count = 0
     for event in events:
-        _handle_event(event)
+        # 只處理訊息事件，非訊息事件直接跳過不開執行緒
+        if event.get("type") == "message":
+            t = threading.Thread(
+                target=_handle_event, args=(event,),
+                daemon=True, name=f"line-event-{thread_count}"
+            )
+            t.start()
+            thread_count += 1
 
+    logger.info(f"收到 {len(events)} 個事件，{thread_count} 個訊息事件已背景處理")
     return "OK"
 
 
