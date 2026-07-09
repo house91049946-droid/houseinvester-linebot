@@ -155,6 +155,12 @@ def _handle_event(event: dict):
 
     if msg_type == "text":
         text = message.get("text", "")
+
+        # 🏠 快捷指令：儀表板（僅限一對一聊天，群組不回覆）
+        if text.strip() == "儀表板" and source_type == "user":
+            _reply_text(user_id, f"📊 數據看板\n{config.PUBLIC_BASE_URL}/dashboard")
+            return
+
         _process_and_notify(message_id, group_id, user_id, text, event, is_image=False)
 
     elif msg_type == "image":
@@ -252,6 +258,24 @@ def _handle_postback(event: dict):
         logger.error(f"儲存興趣狀態失敗: {e}")
     finally:
         session.close()
+
+
+def _reply_text(user_id: str, text: str):
+    """回覆純文字給指定使用者（僅限一對一聊天）"""
+    from urllib.request import Request, urlopen
+    body = json.dumps({
+        "to": user_id,
+        "messages": [{"type": "text", "text": text}]
+    }).encode("utf-8")
+    headers = {
+        "Authorization": f"Bearer {config.LINE_CHANNEL_ACCESS_TOKEN}",
+        "Content-Type": "application/json",
+    }
+    try:
+        req = Request("https://api.line.me/v2/bot/message/push", data=body, headers=headers, method="POST")
+        urlopen(req, timeout=10)
+    except Exception as e:
+        logger.error(f"回覆失敗: {e}")
 
 
 def _get_line_content_url(message_id: str) -> str:
