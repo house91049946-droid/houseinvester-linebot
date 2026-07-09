@@ -22,6 +22,31 @@ from config import config
 logger = logging.getLogger(__name__)
 
 
+def _strip_contact_info(text: str) -> str:
+    """
+    清除文字中的聯絡資訊，避免共享聯絡人造成 fuzzy 去重誤判。
+    移除行：
+    - 聯絡/聯繫/電話/手機/LINE/line 開頭的行
+    - 純電話號碼行 (09xx-xxx-xxx)
+    - 類別標籤行: (買賣件...) (租件...)
+    """
+    lines = text.split("\n")
+    cleaned = []
+    for line in lines:
+        stripped = line.strip()
+        # 聯絡資訊行
+        if re.search(r'(聯絡|聯繫|電話|手機|LINE|line)\s*[:：]', stripped):
+            continue
+        # 純電話號碼 (09xx 開頭)
+        if re.match(r'^09\d{2}[-\s]?\d{3}[-\s]?\d{3}$', stripped):
+            continue
+        # 類別標籤行 (買賣件/租件/售出 開頭)
+        if re.match(r'^[\(（]\s*(買賣件|租件|售出)', stripped):
+            continue
+        cleaned.append(line)
+    return "\n".join(cleaned)
+
+
 def _address_suffix(address: str) -> str:
     """
     從完整地址中提取路名後綴（只取「路/街」之後的地址部分作為比對關鍵）
@@ -191,10 +216,16 @@ class Deduplicator:
                 .all()
             )
 
+            # 比對前先清除聯絡資訊，避免共享聯絡人造成誤判
+            clean_text = _strip_contact_info(text)
             for candidate in candidates:
                 if candidate.description and len(candidate.description) > 20:
+                    clean_candidate = _strip_contact_info(candidate.description)
+                    # 兩邊都去掉聯絡資訊後再比對
+                    if not clean_text or not clean_candidate:
+                        continue
                     similarity = _similarity(
-                        text[:200], candidate.description[:200]
+                        clean_text[:200], clean_candidate[:200]
                     )
                     if similarity > config.DEDUP_SIMILARITY_THRESHOLD * 100:
                         logger.info(
