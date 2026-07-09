@@ -608,6 +608,11 @@ def debug_db():
         info["raw_message_count"] = result.scalar()
         result2 = session.execute(text("SELECT COUNT(*) FROM housing_listings"))
         info["listing_count"] = result2.scalar()
+        # 列出最近的 user_id（協助識別操作者）
+        result3 = session.execute(text(
+            "SELECT DISTINCT user_id FROM raw_messages WHERE user_id IS NOT NULL ORDER BY user_id"
+        ))
+        info["recent_user_ids"] = [row[0] for row in result3]
     except Exception as e:
         info["app_connected"] = False
         info["error"] = str(e)
