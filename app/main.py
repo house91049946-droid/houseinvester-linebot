@@ -7,6 +7,7 @@ import sys
 import json
 import logging
 import asyncio
+import datetime
 import threading
 from pathlib import Path
 
@@ -65,36 +66,35 @@ def run_async(coro):
 def line_callback():
     """
     LINE Webhook 端點
-    接收 LINE 平台推送的所有事件
+    接收 LINE 平台推送的所有事件（含訊息和 postback）
     """
-    # 驗證簽章
-    signature = request.headers.get("X-Line-Signature", "")
     body = request.get_data(as_text=True)
-
-    # 正式環境應驗證簽章
-    # from linebot import WebhookHandler
-    # handler = WebhookHandler(config.LINE_CHANNEL_SECRET)
-    # handler.handle(body, signature)
 
     try:
         events = json.loads(body).get("events", [])
     except json.JSONDecodeError:
         abort(400)
 
-    # 🚀 非同步處理：每個事件在背景執行緒處理，立即回 200 給 LINE
-    # 避免 GPT Vision 耗時導致 LINE webhook timeout（~5 秒）
+    # 非同步處理每個事件
     thread_count = 0
     for event in events:
-        # 只處理訊息事件，非訊息事件直接跳過不開執行緒
-        if event.get("type") == "message":
+        event_type = event.get("type", "")
+        if event_type == "message":
             t = threading.Thread(
                 target=_handle_event, args=(event,),
                 daemon=True, name=f"line-event-{thread_count}"
             )
             t.start()
             thread_count += 1
+        elif event_type == "postback":
+            t = threading.Thread(
+                target=_handle_postback, args=(event,),
+                daemon=True, name=f"line-postback-{thread_count}"
+            )
+            t.start()
+            thread_count += 1
 
-    logger.info(f"收到 {len(events)} 個事件，{thread_count} 個訊息事件已背景處理")
+    logger.info(f"收到 {len(events)} 個事件，{thread_count} 個已背景處理")
     return "OK"
 
 
@@ -199,6 +199,59 @@ def _process_and_notify(message_id, group_id, user_id, text, event,
         return results
 
     return run_async(_run())
+
+
+def _handle_postback(event: dict):
+    """處理使用者點擊卡片按鈕（postback）"""
+    data_str = event.get("postback", {}).get("data", "")
+    source = event.get("source", {})
+    user_id = source.get("userId", "")
+
+    if not data_str or not user_id:
+        return
+
+    # 解析 postback data: "action=interested&listing_id=123"
+    params = {}
+    for pair in data_str.split("&"):
+        if "=" in pair:
+            k, v = pair.split("=", 1)
+            params[k] = v
+
+    action = params.get("action", "")
+    listing_id = params.get("listing_id", "")
+    if not action or not listing_id:
+        return
+
+    logger.info(f"Postback: user={user_id}, action={action}, listing={listing_id}")
+
+    # 儲存興趣狀態
+    session = Session()
+    try:
+        from app.models import InterestStatus
+        existing = (
+            session.query(InterestStatus)
+            .filter(
+                InterestStatus.listing_id == int(listing_id),
+                InterestStatus.user_id == user_id,
+            )
+            .first()
+        )
+        if existing:
+            existing.status = action
+            existing.set_at = datetime.datetime.utcnow()
+        else:
+            new_entry = InterestStatus(
+                listing_id=int(listing_id),
+                user_id=user_id,
+                status=action,
+            )
+            session.add(new_entry)
+        session.commit()
+    except Exception as e:
+        session.rollback()
+        logger.error(f"儲存興趣狀態失敗: {e}")
+    finally:
+        session.close()
 
 
 def _get_line_content_url(message_id: str) -> str:
@@ -541,6 +594,19 @@ def trigger_weekly_summary():
 
     count = run_async(reporter.send_weekly_summary())
     return {"status": "sent", "listing_count": count}
+
+
+@app.route("/api/remind/interested", methods=["POST"])
+def trigger_interest_reminder():
+    """
+    自動提醒：對「有興趣」超過 7 天未處理的案件發送提醒
+    可用 crontab 每天定時呼叫
+    """
+    if not reporter:
+        return {"error": "報表引擎未初始化"}, 500
+
+    count = run_async(reporter.send_interest_reminders())
+    return {"status": "sent", "reminded_count": count}
 
 
 # ─── 啟動 ───

@@ -125,6 +125,19 @@ class ContactInfo(Base):
     company = Column(String(128), nullable=True)
 
 
+class InterestStatus(Base):
+    """使用者對案件的興趣狀態（透過卡片按鈕互動）"""
+    __tablename__ = "interest_status"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    listing_id = Column(Integer, ForeignKey("housing_listings.id"), nullable=False)
+    user_id = Column(String(64), nullable=False)        # LINE 使用者 ID
+    status = Column(String(16), nullable=False)          # completed / interested / not_interested
+    set_at = Column(DateTime, default=datetime.datetime.utcnow)
+    reminder_sent_at = Column(DateTime, nullable=True)   # 上次提醒時間
+    remark = Column(Text, default="")                    # 備註
+
+
 # ----- 資料庫連線 -----
 
 def init_db(db_url: str):

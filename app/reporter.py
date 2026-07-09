@@ -98,49 +98,67 @@ PTYPE_LABELS = {
 
 def format_single_listing(listing_data: dict) -> list[dict]:
     """
-    將單一案件格式化成 LINE Flex Message
+    將單一案件格式化成 LINE Flex Message（卡片式，含互動按鈕）
 
     Args:
-        listing_data: 從 pipeline 回傳的 dict，包含:
-            listing_type, category, property_type,
-            price_wan, unit_price_wan_per_ping, size_ping,
-            floor, rooms, address, community, description,
-            has_parking, has_furniture, confidence
+        listing_data: 包含 listing_id, listing_type, category, property_type,
+            price_wan, size_ping, floor, rooms, address, community,
+            has_parking, has_furniture, description, 聯絡資訊等
     """
     lt = listing_data.get("listing_type", "")
     cat = listing_data.get("category", "")
     pt = listing_data.get("property_type")
+    listing_id = listing_data.get("listing_id", "")
 
-    # 標題行
     type_label = TYPE_LABELS.get(lt, lt)
-    cat_label = CATEGORY_LABELS.get(cat, cat)
 
-    lines = []
+    # ─── 建構卡片內容區 ───
+    body_contents = []
 
-    # 已售出特殊標記
+    # 狀態 Badge（置頂）
     if cat == "sold":
-        lines.append("🎊 已成交")
+        body_contents.append({
+            "type": "box", "layout": "horizontal",
+            "contents": [{
+                "type": "text", "text": "🎊 已成交",
+                "color": "#E53935", "weight": "bold", "size": "sm"
+            }]
+        })
     elif cat == "price_drop":
-        lines.append("📉 降價通知")
+        body_contents.append({
+            "type": "box", "layout": "horizontal",
+            "contents": [{
+                "type": "text", "text": "📉 降價通知",
+                "color": "#FF9800", "weight": "bold", "size": "sm"
+            }]
+        })
 
-    # 標題
-    title_parts = [type_label]
+    # 案件類型（大標）
+    title_text = f"{type_label}"
     if cat == "sold":
-        title_parts.append("🎉")
+        title_text += " 🎉"
     elif cat == "price_drop":
-        title_parts.append("⬇️")
-    title = " ".join(title_parts)
-    lines.append(title)
+        title_text += " ⬇️"
+    body_contents.append({
+        "type": "text", "text": title_text,
+        "weight": "bold", "size": "lg", "wrap": True
+    })
 
-    # 區域
+    # 地址
     addr = listing_data.get("address", "")
     if addr:
-        lines.append(f"📍 {addr}")
+        body_contents.append({
+            "type": "text", "text": f"📍 {addr}",
+            "size": "sm", "color": "#555555", "wrap": True
+        })
 
-    # 社區名稱
+    # 社區
     community = listing_data.get("community")
     if community:
-        lines.append(f"🏢 {community}")
+        body_contents.append({
+            "type": "text", "text": f"🏢 {community}",
+            "size": "sm", "color": "#555555", "wrap": True
+        })
 
     # 物件類型 + 格局
     detail_parts = []
@@ -151,36 +169,53 @@ def format_single_listing(listing_data: dict) -> list[dict]:
     if rooms:
         detail_parts.append(rooms)
     if detail_parts:
-        lines.append(" ".join(detail_parts))
+        body_contents.append({
+            "type": "text", "text": " ".join(detail_parts),
+            "size": "sm", "wrap": True
+        })
 
-    # 樓層
+    # 樓層 + 坪數 同一行
+    detail_line_parts = []
     floor = listing_data.get("floor")
     if floor:
-        lines.append(f"🏗 {floor}")
-
-    # 坪數
+        detail_line_parts.append(f"🏗 {floor}")
     size = listing_data.get("size_ping")
     if size:
-        lines.append(f"📐 {size} 坪")
+        detail_line_parts.append(f"📐 {size}坪")
+    if detail_line_parts:
+        body_contents.append({
+            "type": "text", "text": "  ".join(detail_line_parts),
+            "size": "sm", "wrap": True
+        })
 
-    # 價格（根據買賣/租賃不同顯示方式）
+    # 分隔線
+    body_contents.append({"type": "separator", "margin": "md"})
+
+    # 價格
     price = listing_data.get("price_wan")
     old_price = listing_data.get("old_price_wan")
     if price:
         if lt == "rent":
-            lines.append(f"💰 月租 {price:.1f} 萬")
+            price_text = f"💰 月租 {price:.1f} 萬"
         elif cat == "price_drop" and old_price:
             drop = old_price - price
-            lines.append(f"💰 {old_price:.0f} 萬 → {price:.0f} 萬 (降 {drop:.0f} 萬)")
+            price_text = f"💰 {old_price:.0f} 萬 → {price:.0f} 萬 (降 {drop:.0f} 萬)"
         else:
-            lines.append(f"💰 總價 {price:.0f} 萬")
+            price_text = f"💰 總價 {price:.0f} 萬"
+        body_contents.append({
+            "type": "text", "text": price_text,
+            "weight": "bold", "size": "md", "color": "#E53935", "wrap": True
+        })
 
     # 單價
     unit_p = listing_data.get("unit_price_wan_per_ping")
     if unit_p and lt == "sale":
-        lines.append(f"💵 單價 {unit_p:.1f} 萬/坪")
+        body_contents.append({
+            "type": "text", "text": f"💵 單價 {unit_p:.1f} 萬/坪",
+            "size": "xs", "color": "#888888", "wrap": True
+        })
 
-    # 車位 / 傢俱
+    # 車位 / 傢俱 / 押金 / 管理費
     extras = []
     if listing_data.get("has_parking"):
         extras.append("含車位")
@@ -191,13 +226,22 @@ def format_single_listing(listing_data: dict) -> list[dict]:
     if listing_data.get("management_fee"):
         extras.append(f"管理費{listing_data['management_fee']:.0f}元")
     if extras:
-        lines.append("📌 " + " | ".join(extras))
+        body_contents.append({
+            "type": "text", "text": "📌 " + " | ".join(extras),
+            "size": "xs", "color": "#888888", "wrap": True
+        })
 
-    # 原始文案摘要
+    # 分隔線
+    body_contents.append({"type": "separator", "margin": "md"})
+
+    # 文案摘要
     desc = listing_data.get("description", "")
     if desc:
-        snippet = desc[:100] + ("..." if len(desc) > 100 else "")
-        lines.append(f"📝 {snippet}")
+        snippet = desc[:80] + ("..." if len(desc) > 80 else "")
+        body_contents.append({
+            "type": "text", "text": f"📝 {snippet}",
+            "size": "xs", "color": "#AAAAAA", "wrap": True, "maxLines": 3
+        })
 
     # 聯絡資訊
     contact_parts = []
@@ -206,21 +250,90 @@ def format_single_listing(listing_data: dict) -> list[dict]:
     if listing_data.get("contact_phone"):
         contact_parts.append(f"📞 {listing_data['contact_phone']}")
     if listing_data.get("contact_line"):
-        contact_parts.append(f"💬 LINE: {listing_data['contact_line']}")
+        contact_parts.append(f"💬 {listing_data['contact_line']}")
     if listing_data.get("contact_agency"):
         contact_parts.append(f"🏢 {listing_data['contact_agency']}")
     if contact_parts:
-        lines.append(" | ".join(contact_parts))
+        body_contents.append({
+            "type": "text", "text": "  ".join(contact_parts),
+            "size": "xs", "wrap": True
+        })
 
-    # 時間
-    posted = listing_data.get("posted_at", "")
-    if posted:
-        lines.append(f"🕐 {posted}")
+    # ─── 建構按鈕區 ───
+    buttons = [
+        {
+            "type": "button",
+            "action": {
+                "type": "postback",
+                "label": "✅ 已完成",
+                "data": f"action=completed&listing_id={listing_id}",
+                "displayText": "✅ 已完成"
+            },
+            "style": "primary",
+            "color": "#4CAF50",
+            "height": "sm"
+        },
+        {
+            "type": "button",
+            "action": {
+                "type": "postback",
+                "label": "⭐ 有興趣",
+                "data": f"action=interested&listing_id={listing_id}",
+                "displayText": "⭐ 有興趣"
+            },
+            "style": "primary",
+            "color": "#FF9800",
+            "height": "sm"
+        },
+        {
+            "type": "button",
+            "action": {
+                "type": "postback",
+                "label": "❌ 無興趣",
+                "data": f"action=not_interested&listing_id={listing_id}",
+                "displayText": "❌ 無興趣"
+            },
+            "style": "primary",
+            "color": "#9E9E9E",
+            "height": "sm"
+        }
+    ]
 
-    # 組合為 LINE text message
-    text = "\n".join(lines)
+    # ─── 組裝 Flex Message Bubble ───
+    bubble = {
+        "type": "bubble",
+        "body": {
+            "type": "box",
+            "layout": "vertical",
+            "contents": body_contents,
+            "spacing": "sm",
+            "paddingAll": "16px",
+        },
+        "footer": {
+            "type": "box",
+            "layout": "vertical",
+            "contents": buttons,
+            "spacing": "sm",
+            "paddingAll": "12px",
+        },
+    }
 
-    return [{"type": "text", "text": text}]
+    # 計算 altText（通知列表用的純文字摘要）
+    if price:
+        if lt == "rent":
+            price_text = f"月租{price:.1f}萬"
+        elif cat == "price_drop" and old_price:
+            price_text = f"{old_price:.0f}→{price:.0f}萬"
+        else:
+            price_text = f"總價{price:.0f}萬"
+    else:
+        price_text = ""
+
+    return [{
+        "type": "flex",
+        "altText": f"{type_label} {addr or ''} {price_text if price else ''}",
+        "contents": bubble,
+    }]
 
 
 def format_multi_listing_summary(
@@ -479,6 +592,90 @@ class Reporter:
                     "confidence": 1.0,  # 已儲存表示通過信心門檻
                 })
             return results
+        finally:
+            session.close()
+
+    async def send_interest_reminders(self) -> int:
+        """
+        提醒機制：掃描所有「有興趣」且超過 7 天未提醒的案件，
+        發送提醒通知給目標使用者。
+        """
+        if not config.NOTIFY_TARGET_USER_IDS:
+            return 0
+
+        session = self.Session()
+        try:
+            from app.models import InterestStatus, HousingListing
+
+            cutoff = datetime.utcnow() - timedelta(days=7)
+            # 找「有興趣」但超過 7 天未提醒的
+            rows = (
+                session.query(InterestStatus)
+                .filter(
+                    InterestStatus.status == "interested",
+                    (
+                        InterestStatus.reminder_sent_at.is_(None)
+                        | (InterestStatus.reminder_sent_at <= cutoff)
+                    ),
+                    InterestStatus.set_at <= cutoff,
+                )
+                .all()
+            )
+
+            reminded = 0
+            for row in rows:
+                listing = session.query(HousingListing).filter(
+                    HousingListing.id == row.listing_id
+                ).first()
+                if not listing:
+                    continue
+
+                # 發送提醒卡片（附加提醒文字）
+                reminder_text = (
+                    "⏰ 提醒：您之前對以下案件表示有興趣，"
+                    "但超過 7 天尚未處理，請注意！"
+                )
+                msg = {"type": "text", "text": reminder_text}
+
+                listing_data = {
+                    "listing_id": listing.id,
+                    "listing_type": listing.listing_type,
+                    "property_type": listing.property_type,
+                    "category": listing.category,
+                    "price_wan": listing.price,
+                    "size_ping": listing.size_ping,
+                    "floor": listing.floor,
+                    "rooms": listing.rooms,
+                    "address": listing.address,
+                    "community": listing.community_name,
+                    "has_parking": listing.has_parking,
+                    "has_furniture": listing.has_furniture,
+                    "deposit": listing.deposit,
+                    "management_fee": listing.management_fee,
+                    "description": listing.description or "",
+                    "contact_name": None,
+                    "contact_phone": None,
+                    "contact_line": None,
+                    "contact_agency": None,
+                }
+                card = format_single_listing(listing_data)
+
+                self.pusher.push_to_multiple(
+                    config.NOTIFY_TARGET_USER_IDS,
+                    [msg] + card
+                )
+
+                # 更新提醒時間
+                row.reminder_sent_at = datetime.utcnow()
+                reminded += 1
+
+            session.commit()
+            logger.info(f"興趣提醒已發送: {reminded} 筆")
+            return reminded
+        except Exception as e:
+            session.rollback()
+            logger.error(f"興趣提醒發送失敗: {e}")
+            return 0
         finally:
             session.close()
 
