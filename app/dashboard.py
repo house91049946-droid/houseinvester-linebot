@@ -6,7 +6,7 @@ DASHBOARD_HTML = r"""<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>房產案件數據看板</title>
+<title>投資客案件收集器</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#0f172a;color:#e2e8f0;min-height:100vh}
@@ -49,7 +49,7 @@ tr.row-processed{opacity:.55}
 </head>
 <body>
 <div class="header">
-<h1>房產案件數據看板</h1>
+<h1>投資客案件收集器</h1>
 <button class="refresh" onclick="loadData()">重新整理</button>
 </div>
 <div class="stats" id="stats"></div>

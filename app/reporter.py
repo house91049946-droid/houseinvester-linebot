@@ -338,7 +338,7 @@ def format_single_listing(listing_data: dict) -> list[dict]:
 
 def format_multi_listing_summary(
     listings: list[dict],
-    title: str = "📊 案件摘要",
+    title: str = "📊 投資客案件收集器",
     period: str = "",
 ) -> list[dict]:
     """

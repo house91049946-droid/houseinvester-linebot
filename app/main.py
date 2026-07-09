@@ -158,7 +158,7 @@ def _handle_event(event: dict):
 
         # 🏠 快捷指令：儀表板（僅限一對一聊天，群組不回覆）
         if text.strip() == "儀表板" and source_type == "user":
-            _reply_text(user_id, f"📊 數據看板\n{config.PUBLIC_BASE_URL}/dashboard")
+            _reply_text(user_id, f"📊 投資客案件收集器\n{config.PUBLIC_BASE_URL}/dashboard")
             return
 
         # 📋 快捷指令：我的案件（列出有興趣+未標記案件）
