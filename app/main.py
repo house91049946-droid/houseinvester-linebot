@@ -235,10 +235,12 @@ def _handle_postback(event: dict):
 
     logger.info(f"Postback: user={user_id}, action={action}, listing={listing_id}")
 
-    # 儲存興趣狀態
+    # 儲存興趣狀態 + 同步儀表板已處理/未處理
     session = Session()
     try:
-        from app.models import InterestStatus
+        from app.models import InterestStatus, HousingListing
+
+        # 1) 更新 InterestStatus
         existing = (
             session.query(InterestStatus)
             .filter(
@@ -257,7 +259,20 @@ def _handle_postback(event: dict):
                 status=action,
             )
             session.add(new_entry)
+
+        # 2) 同步 is_processed 到儀表板
+        #    completed / not_interested → 已處理；interested → 未處理
+        listing = session.query(HousingListing).filter(
+            HousingListing.id == int(listing_id)
+        ).first()
+        if listing:
+            if action in ("completed", "not_interested"):
+                listing.is_processed = True
+            elif action == "interested":
+                listing.is_processed = False
+
         session.commit()
+        logger.info(f"興趣+處理狀態已同步: listing={listing_id}, action={action}")
     except Exception as e:
         session.rollback()
         logger.error(f"儲存興趣狀態失敗: {e}")
