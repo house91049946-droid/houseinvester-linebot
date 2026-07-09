@@ -467,6 +467,7 @@ def debug_pipeline_stats():
 @app.route("/api/debug/messages", methods=["GET"])
 def debug_messages():
     """除錯：查看最近收到的原始訊息狀態"""
+    raw = request.args.get("raw", "false") == "true"
     limit = request.args.get("limit", 20, type=int)
     session = Session()
     try:
@@ -482,16 +483,20 @@ def debug_messages():
             listing = session.query(HousingListing).filter(
                 HousingListing.source_message_id == r.id
             ).first()
-            results.append({
+            entry = {
                 "message_id": r.message_id,
                 "type": r.message_type,
-                "text_preview": (r.text_content or r.ocr_text or "")[:80],
+                "text_preview": (r.text_content or r.ocr_text or "")[:80 if not raw else -1],
                 "created_at": r.created_at.isoformat() if r.created_at else None,
                 "has_listing": listing is not None,
                 "listing_category": listing.category if listing else None,
                 "listing_address": listing.address if listing else None,
                 "is_duplicate": listing.is_duplicate if listing else None,
-            })
+            }
+            if raw:
+                entry["text_full"] = r.text_content or ""
+                entry["ocr_text"] = r.ocr_text or ""
+            results.append(entry)
         return {"count": len(results), "messages": results}
     finally:
         session.close()
