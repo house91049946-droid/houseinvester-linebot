@@ -163,12 +163,12 @@ class ProcessingPipeline:
 
         # ─── GPT 判定不是房產 → 跳過 ───
         if gpt_result and gpt_result.get("is_property") is False:
-            logger.info("GPT 判定不是房產圖片，跳過")
+            logger.info(f"GPT 判定不是房產圖片，跳過: {message_id}")
             return None
 
         # ─── Fallback: tesseract OCR → 傳統 pipeline ───
         if not ocr_text or len(ocr_text) < 10:
-            logger.info(f"OCR 辨識失敗或文字不足: {message_id}")
+            logger.info(f"OCR 辨識失敗或文字不足 (<10字)，跳過: {message_id}")
             return None
 
         logger.info(f"OCR 辨識文字: {ocr_text[:200]}...")
@@ -177,10 +177,12 @@ class ProcessingPipeline:
         category = classifier.classify(normalized)
 
         if category not in ("new_listing", "sold"):
+            logger.info(f"分類非案件 ({category})，跳過: {message_id}")
             return None
 
         extracted = extractor.extract(normalized)
         if extracted.confidence < 0.3:
+            logger.info(f"萃取信心度太低 ({extracted.confidence:.2f})，跳過: {message_id}")
             return None
 
         is_dup, dup_of_id = self.deduplicator.check_duplicate(

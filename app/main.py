@@ -125,9 +125,12 @@ def _handle_event(event: dict):
     msg_type = message.get("type", "")
     message_id = message.get("id", "")
 
+    # 🔍 計數 log
+    logger.info(f"📩 收到訊息 #{message_id}: type={msg_type}, group={group_id}")
+
     # 檢查訊息是否已處理過（冪等性）
     if _is_duplicate_message(message_id):
-        logger.debug(f"跳過已處理的訊息: {message_id}")
+        logger.info(f"⏭️ 跳過已處理的訊息: {message_id}")
         return
 
     logger.info(f"收到群組訊息: type={msg_type}, group={group_id}")
@@ -302,6 +305,89 @@ def get_listings():
     except Exception as e:
         logger.error(f"查詢案件失敗: {e}")
         return {"error": str(e)}, 500
+    finally:
+        session.close()
+
+
+@app.route("/api/debug/pipeline-stats", methods=["GET"])
+def debug_pipeline_stats():
+    """除錯：管線統計 — 多少訊息進來 vs 多少變成案件"""
+    from sqlalchemy import func
+    from app.models import HousingListing
+
+    session = Session()
+    try:
+        total_messages = session.query(func.count(RawMessage.id)).scalar()
+        total_listings = session.query(func.count(HousingListing.id)).scalar()
+        dup_count = session.query(func.count(HousingListing.id)).filter(
+            HousingListing.is_duplicate == True
+        ).scalar()
+        sold_count = session.query(func.count(HousingListing.id)).filter(
+            HousingListing.category == "sold"
+        ).scalar()
+
+        recent_messages = (
+            session.query(RawMessage)
+            .order_by(RawMessage.created_at.desc())
+            .limit(30)
+            .all()
+        )
+        recent_data = []
+        for r in recent_messages:
+            l = session.query(HousingListing).filter(
+                HousingListing.source_message_id == r.id
+            ).first()
+            recent_data.append({
+                "raw_id": r.id,
+                "msg_id": r.message_id,
+                "type": r.message_type,
+                "text_preview": (r.text_content or r.ocr_text or "")[:100],
+                "has_listing": l is not None,
+                "listing_cat": l.category if l else None,
+                "listing_addr": l.address if l else None,
+                "is_dup": l.is_duplicate if l else None,
+            })
+
+        return {
+            "total_raw_messages": total_messages,
+            "total_listings": total_listings,
+            "duplicate_listings": dup_count,
+            "sold_listings": sold_count,
+            "recent_messages": recent_data,
+        }
+    finally:
+        session.close()
+
+
+@app.route("/api/debug/messages", methods=["GET"])
+def debug_messages():
+    """除錯：查看最近收到的原始訊息狀態"""
+    limit = request.args.get("limit", 20, type=int)
+    session = Session()
+    try:
+        rows = (
+            session.query(RawMessage)
+            .order_by(RawMessage.created_at.desc())
+            .limit(limit)
+            .all()
+        )
+        from app.models import HousingListing
+        results = []
+        for r in rows:
+            listing = session.query(HousingListing).filter(
+                HousingListing.source_message_id == r.id
+            ).first()
+            results.append({
+                "message_id": r.message_id,
+                "type": r.message_type,
+                "text_preview": (r.text_content or r.ocr_text or "")[:80],
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+                "has_listing": listing is not None,
+                "listing_category": listing.category if listing else None,
+                "listing_address": listing.address if listing else None,
+                "is_duplicate": listing.is_duplicate if listing else None,
+            })
+        return {"count": len(results), "messages": results}
     finally:
         session.close()
 
