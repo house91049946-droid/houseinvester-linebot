@@ -72,9 +72,9 @@ class LINEPusher:
 # ─── 訊息格式化 ───
 
 TYPE_LABELS = {
-    "sale": "🏠 出售",
-    "rent": "🔑 出租",
-    "pre_rent": "📋 預租",
+    "sale": "出售",
+    "rent": "出租",
+    "pre_rent": "預租",
 }
 
 CATEGORY_LABELS = {
@@ -120,7 +120,7 @@ def format_single_listing(listing_data: dict) -> list[dict]:
         body_contents.append({
             "type": "box", "layout": "horizontal",
             "contents": [{
-                "type": "text", "text": "🎊 已成交",
+                "type": "text", "text": "已成交",
                 "color": "#E53935", "weight": "bold", "size": "sm"
             }]
         })
@@ -128,17 +128,13 @@ def format_single_listing(listing_data: dict) -> list[dict]:
         body_contents.append({
             "type": "box", "layout": "horizontal",
             "contents": [{
-                "type": "text", "text": "📉 降價通知",
+                "type": "text", "text": "降價通知",
                 "color": "#FF9800", "weight": "bold", "size": "sm"
             }]
         })
 
     # 案件類型（大標）
     title_text = f"{type_label}"
-    if cat == "sold":
-        title_text += " 🎉"
-    elif cat == "price_drop":
-        title_text += " ⬇️"
     body_contents.append({
         "type": "text", "text": title_text,
         "weight": "bold", "size": "lg", "wrap": True
@@ -148,7 +144,7 @@ def format_single_listing(listing_data: dict) -> list[dict]:
     addr = listing_data.get("address", "")
     if addr:
         body_contents.append({
-            "type": "text", "text": f"📍 {addr}",
+            "type": "text", "text": addr,
             "size": "sm", "color": "#555555", "wrap": True
         })
 
@@ -156,7 +152,7 @@ def format_single_listing(listing_data: dict) -> list[dict]:
     community = listing_data.get("community")
     if community:
         body_contents.append({
-            "type": "text", "text": f"🏢 {community}",
+            "type": "text", "text": community,
             "size": "sm", "color": "#555555", "wrap": True
         })
 
@@ -178,10 +174,10 @@ def format_single_listing(listing_data: dict) -> list[dict]:
     detail_line_parts = []
     floor = listing_data.get("floor")
     if floor:
-        detail_line_parts.append(f"🏗 {floor}")
+        detail_line_parts.append(f"{floor}樓")
     size = listing_data.get("size_ping")
     if size:
-        detail_line_parts.append(f"📐 {size}坪")
+        detail_line_parts.append(f"{size}坪")
     if detail_line_parts:
         body_contents.append({
             "type": "text", "text": "  ".join(detail_line_parts),
@@ -196,12 +192,12 @@ def format_single_listing(listing_data: dict) -> list[dict]:
     old_price = listing_data.get("old_price_wan")
     if price:
         if lt == "rent":
-            price_text = f"💰 月租 {price:.1f} 萬"
+            price_text = f"月租 {price:.1f} 萬"
         elif cat == "price_drop" and old_price:
             drop = old_price - price
-            price_text = f"💰 {old_price:.0f} 萬 → {price:.0f} 萬 (降 {drop:.0f} 萬)"
+            price_text = f"{old_price:.0f} 萬 -> {price:.0f} 萬 (降 {drop:.0f} 萬)"
         else:
-            price_text = f"💰 總價 {price:.0f} 萬"
+            price_text = f"總價 {price:.0f} 萬"
         body_contents.append({
             "type": "text", "text": price_text,
             "weight": "bold", "size": "md", "color": "#E53935", "wrap": True
@@ -211,7 +207,7 @@ def format_single_listing(listing_data: dict) -> list[dict]:
     unit_p = listing_data.get("unit_price_wan_per_ping")
     if unit_p and lt == "sale":
         body_contents.append({
-            "type": "text", "text": f"💵 單價 {unit_p:.1f} 萬/坪",
+            "type": "text", "text": f"單價 {unit_p:.1f} 萬/坪",
             "size": "xs", "color": "#888888", "wrap": True
         })
 
@@ -227,7 +223,7 @@ def format_single_listing(listing_data: dict) -> list[dict]:
         extras.append(f"管理費{listing_data['management_fee']:.0f}元")
     if extras:
         body_contents.append({
-            "type": "text", "text": "📌 " + " | ".join(extras),
+            "type": "text", "text": " | ".join(extras),
             "size": "xs", "color": "#888888", "wrap": True
         })
 
@@ -239,20 +235,20 @@ def format_single_listing(listing_data: dict) -> list[dict]:
     if desc:
         snippet = desc[:80] + ("..." if len(desc) > 80 else "")
         body_contents.append({
-            "type": "text", "text": f"📝 {snippet}",
+            "type": "text", "text": snippet,
             "size": "xs", "color": "#AAAAAA", "wrap": True, "maxLines": 3
         })
 
     # 聯絡資訊
     contact_parts = []
     if listing_data.get("contact_name"):
-        contact_parts.append(f"👤 {listing_data['contact_name']}")
+        contact_parts.append(listing_data['contact_name'])
     if listing_data.get("contact_phone"):
-        contact_parts.append(f"📞 {listing_data['contact_phone']}")
+        contact_parts.append(listing_data['contact_phone'])
     if listing_data.get("contact_line"):
-        contact_parts.append(f"💬 {listing_data['contact_line']}")
+        contact_parts.append("LINE: " + listing_data['contact_line'])
     if listing_data.get("contact_agency"):
-        contact_parts.append(f"🏢 {listing_data['contact_agency']}")
+        contact_parts.append(listing_data['contact_agency'])
     if contact_parts:
         body_contents.append({
             "type": "text", "text": "  ".join(contact_parts),
@@ -265,9 +261,9 @@ def format_single_listing(listing_data: dict) -> list[dict]:
             "type": "button",
             "action": {
                 "type": "postback",
-                "label": "✅ 已完成",
+                "label": "已完成",
                 "data": f"action=completed&listing_id={listing_id}",
-                "displayText": "✅ 已完成"
+                "displayText": "已完成"
             },
             "style": "primary",
             "color": "#4CAF50",
@@ -277,9 +273,9 @@ def format_single_listing(listing_data: dict) -> list[dict]:
             "type": "button",
             "action": {
                 "type": "postback",
-                "label": "⭐ 有興趣",
+                "label": "有興趣",
                 "data": f"action=interested&listing_id={listing_id}",
-                "displayText": "⭐ 有興趣"
+                "displayText": "有興趣"
             },
             "style": "primary",
             "color": "#FF9800",
@@ -289,9 +285,9 @@ def format_single_listing(listing_data: dict) -> list[dict]:
             "type": "button",
             "action": {
                 "type": "postback",
-                "label": "❌ 無興趣",
+                "label": "無興趣",
                 "data": f"action=not_interested&listing_id={listing_id}",
-                "displayText": "❌ 無興趣"
+                "displayText": "無興趣"
             },
             "style": "primary",
             "color": "#9E9E9E",
@@ -338,21 +334,21 @@ def format_single_listing(listing_data: dict) -> list[dict]:
 
 def format_multi_listing_summary(
     listings: list[dict],
-    title: str = "📊 投資客案件收集器",
+    title: str = "投資客案件收集器",
     period: str = "",
 ) -> list[dict]:
     """
     多筆案件摘要（用於每日/每週報表）
 
     格式：
-    📊 每日案件摘要 (2026-07-08)
+    投資客案件收集器
+    2026-07-08
     ─────────────────
-    今日共 12 筆新案件
-    🏠 出售 8 筆 | 🔑 出租 4 筆
-    🎉 成交 3 筆
+    出售 8 筆 | 出租 4 筆
+    成交 3 筆
     ─────────────────
-    🏠 內湖區 2680萬 25.8坪 3房2廳2衛
-    🔑 大安區 月租15萬 45坪 店面
+    出售 內湖區 2680萬 25.8坪 3房2廳2衛
+    出租 大安區 月租15萬 45坪 店面
     ...
     """
     messages = []
@@ -364,11 +360,11 @@ def format_multi_listing_summary(
 
     header_lines = [title]
     if period:
-        header_lines.append(f"📅 {period}")
+        header_lines.append(f"{period}")
     header_lines.append("─" * 20)
-    header_lines.append(f"🏠 出售 {sale_count} 筆 | 🔑 出租 {rent_count} 筆")
+    header_lines.append(f"出售 {sale_count} 筆 | 出租 {rent_count} 筆")
     if sold_count:
-        header_lines.append(f"🎉 成交 {sold_count} 筆")
+        header_lines.append(f"成交 {sold_count} 筆")
     header_lines.append("─" * 20)
 
     messages.append({"type": "text", "text": "\n".join(header_lines)})
@@ -378,10 +374,10 @@ def format_multi_listing_summary(
     for i, l in enumerate(listings):
         lt = l.get("listing_type", "")
         cat = l.get("category", "")
-        type_icon = "🏠" if lt == "sale" else "🔑" if lt == "rent" else "📋"
-        cat_suffix = " 🎉已成交" if cat == "sold" else ""
+        type_label = "出售" if lt == "sale" else "出租" if lt == "rent" else "預租"
+        cat_suffix = " 已成交" if cat == "sold" else ""
 
-        parts = [type_icon]
+        parts = [type_label]
 
         addr = l.get("address", "")
         if addr:
@@ -483,14 +479,14 @@ class Reporter:
 
         messages = format_multi_listing_summary(
             listings,
-            title="📊 每日案件摘要",
+            title="每日案件摘要",
             period=target_date,
         )
 
         if not listings:
             messages = [{
                 "type": "text",
-                "text": f"📊 每日案件摘要\n📅 {target_date}\n─" * 20 + "\n本日尚無新案件"
+                "text": f"每日案件摘要\n{target_date}\n" + "─" * 20 + "\n本日尚無新案件"
             }]
 
         self.pusher.push_to_multiple(
@@ -512,14 +508,14 @@ class Reporter:
         period = f"{start.strftime('%m/%d')} - {end.strftime('%m/%d')}"
         messages = format_multi_listing_summary(
             listings,
-            title="📊 本週案件摘要",
+            title="本週案件摘要",
             period=period,
         )
 
         if not listings:
             messages = [{
                 "type": "text",
-                "text": f"📊 本週案件摘要\n📅 {period}\n─" * 20 + "\n本週尚無新案件"
+                "text": f"本週案件摘要\n{period}\n" + "─" * 20 + "\n本週尚無新案件"
             }]
 
         sale_count = sum(
@@ -536,8 +532,8 @@ class Reporter:
         )
 
         stat_lines = [
-            f"📊 本週統計",
-            f"📅 {period}",
+            "本週統計",
+            period,
             "─" * 20,
             f"總案件: {len(listings)} 筆",
             f"出售: {sale_count} 筆 (總價約 {total_price:.0f} 萬)",
@@ -632,7 +628,7 @@ class Reporter:
 
                 # 發送提醒卡片（附加提醒文字）
                 reminder_text = (
-                    "⏰ 提醒：您之前對以下案件表示有興趣，"
+                    "提醒：您之前對以下案件表示有興趣，"
                     "但超過 7 天尚未處理，請注意！"
                 )
                 msg = {"type": "text", "text": reminder_text}
@@ -722,11 +718,11 @@ class Reporter:
 
             # 組裝摘要訊息
             header = [
-                f"📋 每週待辦案件摘要",
-                f"📅 {datetime.utcnow().strftime('%Y/%m/%d')}",
+                "每週待辦案件摘要",
+                f"{datetime.utcnow().strftime('%Y/%m/%d')}",
                 "─" * 20,
-                f"⭐ 有興趣: {len(interested_listings)} 筆",
-                f"📌 未標記: {len(unlabeled_listings)} 筆",
+                f"有興趣: {len(interested_listings)} 筆",
+                f"未標記: {len(unlabeled_listings)} 筆",
                 "─" * 20,
             ]
 
@@ -734,33 +730,33 @@ class Reporter:
 
             # 有興趣的先列
             if interested_listings:
-                lines = ["🔶 有興趣的案件："]
+                lines = ["- 有興趣的案件："]
                 for l in interested_listings[:10]:
-                    icon = "🏠" if l.listing_type == "sale" else "🔑"
+                    label = "售" if l.listing_type == "sale" else "租"
                     addr = (l.address or "無地址")[:25]
                     price = getattr(l, 'price', None)
                     price_str = f" {price:.0f}萬" if price else ""
-                    lines.append(f"{icon} {addr}{price_str}")
+                    lines.append(f"[{label}] {addr}{price_str}")
                 if len(interested_listings) > 10:
                     lines.append(f"  ...還有 {len(interested_listings) - 10} 筆")
                 messages.append({"type": "text", "text": "\n".join(lines)})
 
             # 未標記的
             if unlabeled_listings:
-                lines = ["🔹 尚未標記的案件："]
+                lines = ["- 尚未標記的案件："]
                 for l in unlabeled_listings[:10]:
-                    icon = "🏠" if l.listing_type == "sale" else "🔑"
+                    label = "售" if l.listing_type == "sale" else "租"
                     addr = (l.address or "無地址")[:25]
                     price = getattr(l, 'price', None)
                     price_str = f" {price:.0f}萬" if price else ""
-                    lines.append(f"{icon} {addr}{price_str}")
+                    lines.append(f"[{label}] {addr}{price_str}")
                 if len(unlabeled_listings) > 10:
                     lines.append(f"  ...還有 {len(unlabeled_listings) - 10} 筆")
                 messages.append({"type": "text", "text": "\n".join(lines)})
 
             messages.append({
                 "type": "text",
-                "text": "💡 請使用卡片上的按鈕標記案件狀態\n或前往儀表板查看完整列表"
+                "text": "請使用卡片上的按鈕標記案件狀態\n或前往儀表板查看完整列表"
             })
 
             self.pusher.push_to_multiple(
