@@ -78,6 +78,11 @@ class Config:
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
     OPENAI_MODEL: str = "gpt-4o"  # 支援 vision 的模型
 
+    # ─── DeepSeek（文字萃取） ───
+    DEEPSEEK_API_KEY: str = os.getenv("DEEPSEEK_API_KEY", "")
+    DEEPSEEK_BASE_URL: str = "https://api.deepseek.com"
+    DEEPSEEK_MODEL: str = "deepseek-chat"  # 高性能 + 便宜
+
     # 對外公開 URL（用於圖片轉發）
     PUBLIC_BASE_URL: str = os.getenv("PUBLIC_BASE_URL", "")
 

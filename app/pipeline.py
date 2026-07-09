@@ -13,6 +13,7 @@ from app.classifier import classifier
 from app.extractor import extractor
 from app.ocr_engine import ocr_engine
 from app.deduplicator import Deduplicator
+from app.deepseek_text import extract_with_deepseek
 
 logger = logging.getLogger(__name__)
 
@@ -148,7 +149,7 @@ class ProcessingPipeline:
         raw_payload: dict,
     ) -> Optional[dict]:
         """
-        處理純文字訊息
+        處理純文字訊息（DeepSeek 優先 → regex fallback）
 
         Returns:
             如果成功萃取案件，回傳 dict；否則回傳 None
@@ -163,27 +164,33 @@ class ProcessingPipeline:
             raw_payload=raw_payload,
         )
 
-        # Step 1: 文字正規化
+        # ── DeepSeek LLM 萃取（優先）──
+        deepseek_result = extract_with_deepseek(text)
+        if deepseek_result and deepseek_result.get("is_property") is True:
+            logger.info(f"DeepSeek 成功萃取案件: {deepseek_result.get('address', '')}")
+            return self._handle_gpt_result(
+                deepseek_result, raw_msg, message_id, group_id,
+                image_path="", normalized_text=text
+            )
+
+        if deepseek_result and deepseek_result.get("is_property") is False:
+            logger.info(f"DeepSeek 判定非房產: {message_id}")
+            return None
+
+        # ── Fallback: 傳統 regex 萃取 ──
+        logger.info(f"DeepSeek 無法萃取，改用 regex fallback: {message_id}")
         normalized = self.normalizer.normalize(text)
-        logger.debug(f"正規化後: {normalized[:100]}...")
-
-        # Step 2: 分類
         category = classifier.classify(normalized)
-        logger.info(f"訊息分類: {category}")
+        logger.info(f"訊息分類(fallback): {category}")
 
-        # 只處理案件、售出和降價訊息
         if category not in ("new_listing", "sold", "price_drop"):
             return None
 
-        # Step 3: NLP 萃取
         extracted = extractor.extract(normalized)
-
-        # 信心度太低就跳過
         if extracted.confidence < 0.3:
             logger.info(f"萃取信心度太低 ({extracted.confidence:.2f})，跳過: {message_id}")
             return None
 
-        # Step 4: 去重檢查（降價訊息先用寬鬆去重，看是否同地址 + 更低價格）
         is_dup, dup_of_id, old_price = self.deduplicator.check_duplicate_with_price(
             text=normalized,
             group_id=group_id,
@@ -191,59 +198,43 @@ class ProcessingPipeline:
             address=getattr(extracted, 'address', None),
         )
 
-        # 降價判斷：地址匹配且新價格低於舊價格
         is_price_drop = False
         if is_dup and category == "price_drop" and extracted.price_wan and old_price:
             if extracted.price_wan < old_price:
                 is_price_drop = True
-                logger.info(f"降價: {extracted.price_wan}萬 < {old_price}萬 (舊), 地址: {getattr(extracted, 'address', '')}")
 
-        # 降價通知：儲存並回傳
         if is_price_drop:
             listing = self._save_listing(
-                raw_message=raw_msg,
-                extracted=extracted,
-                category="price_drop",
-                normalized_text=normalized,
+                raw_message=raw_msg, extracted=extracted,
+                category="price_drop", normalized_text=normalized,
                 is_duplicate=False,
             )
             self._save_contact_from_text(listing, text)
-            result = {
-                "listing_id": listing.id,
-                "category": "price_drop",
+            return {
+                "listing_id": listing.id, "category": "price_drop",
                 "listing_type": extracted.listing_type,
                 "property_type": extracted.property_type,
-                "price_wan": extracted.price_wan,
-                "old_price_wan": old_price,
+                "price_wan": extracted.price_wan, "old_price_wan": old_price,
                 "unit_price_wan_per_ping": extracted.unit_price_wan_per_ping,
                 "size_ping": extracted.size_ping,
-                "floor": extracted.floor,
-                "rooms": extracted.rooms,
-                "address": extracted.address,
-                "community": extracted.community,
+                "floor": extracted.floor, "rooms": extracted.rooms,
+                "address": extracted.address, "community": extracted.community,
                 "has_parking": extracted.has_parking,
                 "has_furniture": extracted.has_furniture,
                 "deposit": extracted.deposit,
                 "management_fee": extracted.management_fee,
-                "description": text,
-                "confidence": extracted.confidence,
+                "description": text, "confidence": extracted.confidence,
                 "contact_name": self._extract_contact_name(text),
                 "contact_phone": self._extract_contact_phone(text),
                 "contact_line": self._extract_contact_line(text),
                 "contact_agency": self._extract_contact_agency(text),
             }
-            return result
 
-        # 真正重複不通知
         if is_dup:
-            logger.info(f"偵測到重複案件，來源 ID: {dup_of_id}")
-            listing = self._save_listing(
-                raw_message=raw_msg,
-                extracted=extracted,
-                category=category,
-                normalized_text=normalized,
-                is_duplicate=True,
-                duplicate_of_id=dup_of_id,
+            self._save_listing(
+                raw_message=raw_msg, extracted=extracted,
+                category=category, normalized_text=normalized,
+                is_duplicate=True, duplicate_of_id=dup_of_id,
             )
             return None
 
