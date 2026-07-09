@@ -84,6 +84,13 @@ class MessageClassifier:
             logger.info(f"歸類為新聞摘要，跳過")
             return "promotion"
 
+        # 0.7 降價檢查（要在售出之前，避免「降價出售」被誤判為售出）
+        if any(kw in text for kw in self.PRICE_DROP_KEYWORDS):
+            listing_type = extractor._detect_listing_type(text)
+            if listing_type:
+                logger.info(f"歸類為降價訊息: {text[:60]}...")
+                return "price_drop"
+
         # 1. 售出/成交訊息
         if extractor.is_sold_message(text):
             return "sold"
@@ -98,12 +105,6 @@ class MessageClassifier:
         has_strong_signal = any(sig in text for sig in self.STRONG_SIGNALS)
 
         if (has_listing_signals and is_long_enough) or has_strong_signal:
-            # 降價訊息
-            if any(kw in text for kw in self.PRICE_DROP_KEYWORDS):
-                listing_type = extractor._detect_listing_type(text)
-                if listing_type:
-                    return "price_drop"
-
             # 用 extractor 確認是買賣還是租賃
             listing_type = extractor._detect_listing_type(text)
             if listing_type:
