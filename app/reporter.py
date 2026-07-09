@@ -679,6 +679,103 @@ class Reporter:
         finally:
             session.close()
 
+    async def send_weekly_pending_summary(self) -> int:
+        """
+        每週一摘要：列出所有「有興趣」和「未標記」的案件。
+        回傳發送的案件數量。
+        """
+        if not config.NOTIFY_TARGET_USER_IDS:
+            return 0
+
+        session = self.Session()
+        try:
+            from app.models import InterestStatus, HousingListing
+
+            # 所有非重複、未標記「已完成」或「無興趣」的案件
+            # 先取所有已標記的 listing_id
+            labeled = set()
+            labeled_rows = session.query(InterestStatus).all()
+            for r in labeled_rows:
+                if r.status != "completed" and r.status != "not_interested":
+                    labeled.add(r.listing_id)
+
+            # 所有非重複 listing
+            all_listings = (
+                session.query(HousingListing)
+                .filter(HousingListing.is_duplicate == False)
+                .order_by(HousingListing.posted_at.desc())
+                .all()
+            )
+
+            interested_listings = []
+            unlabeled_listings = []
+
+            for l in all_listings:
+                if l.id in labeled:
+                    interested_listings.append(l)
+                elif l.id not in {r.listing_id for r in labeled_rows}:
+                    unlabeled_listings.append(l)
+
+            total = len(interested_listings) + len(unlabeled_listings)
+            if total == 0:
+                return 0
+
+            # 組裝摘要訊息
+            header = [
+                f"📋 每週待辦案件摘要",
+                f"📅 {datetime.utcnow().strftime('%Y/%m/%d')}",
+                "─" * 20,
+                f"⭐ 有興趣: {len(interested_listings)} 筆",
+                f"📌 未標記: {len(unlabeled_listings)} 筆",
+                "─" * 20,
+            ]
+
+            messages = [{"type": "text", "text": "\n".join(header)}]
+
+            # 有興趣的先列
+            if interested_listings:
+                lines = ["🔶 有興趣的案件："]
+                for l in interested_listings[:10]:
+                    icon = "🏠" if l.listing_type == "sale" else "🔑"
+                    addr = (l.address or "無地址")[:25]
+                    price = getattr(l, 'price', None)
+                    price_str = f" {price:.0f}萬" if price else ""
+                    lines.append(f"{icon} {addr}{price_str}")
+                if len(interested_listings) > 10:
+                    lines.append(f"  ...還有 {len(interested_listings) - 10} 筆")
+                messages.append({"type": "text", "text": "\n".join(lines)})
+
+            # 未標記的
+            if unlabeled_listings:
+                lines = ["🔹 尚未標記的案件："]
+                for l in unlabeled_listings[:10]:
+                    icon = "🏠" if l.listing_type == "sale" else "🔑"
+                    addr = (l.address or "無地址")[:25]
+                    price = getattr(l, 'price', None)
+                    price_str = f" {price:.0f}萬" if price else ""
+                    lines.append(f"{icon} {addr}{price_str}")
+                if len(unlabeled_listings) > 10:
+                    lines.append(f"  ...還有 {len(unlabeled_listings) - 10} 筆")
+                messages.append({"type": "text", "text": "\n".join(lines)})
+
+            messages.append({
+                "type": "text",
+                "text": "💡 請使用卡片上的按鈕標記案件狀態\n或前往儀表板查看完整列表"
+            })
+
+            self.pusher.push_to_multiple(
+                config.NOTIFY_TARGET_USER_IDS, messages
+            )
+
+            logger.info(f"每週待辦摘要已發送: {total} 筆（有興趣 {len(interested_listings)} + 未標記 {len(unlabeled_listings)}）")
+            return total
+        except Exception as e:
+            session.rollback()
+            logger.error(f"每週摘要發送失敗: {e}")
+            return 0
+        finally:
+            session.close()
+
     async def close(self):
         pass  # urllib 不需要關閉
 

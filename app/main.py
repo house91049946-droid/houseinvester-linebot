@@ -161,6 +161,11 @@ def _handle_event(event: dict):
             _reply_text(user_id, f"📊 數據看板\n{config.PUBLIC_BASE_URL}/dashboard")
             return
 
+        # 📋 快捷指令：我的案件（列出有興趣+未標記案件）
+        if text.strip() == "我的案件" and source_type == "user":
+            run_async(reporter.send_weekly_pending_summary())
+            return
+
         _process_and_notify(message_id, group_id, user_id, text, event, is_image=False)
 
     elif msg_type == "image":
@@ -631,6 +636,19 @@ def trigger_interest_reminder():
 
     count = run_async(reporter.send_interest_reminders())
     return {"status": "sent", "reminded_count": count}
+
+
+@app.route("/api/report/weekly-pending", methods=["POST"])
+def trigger_weekly_pending():
+    """
+    每週一待辦摘要：列出「有興趣」+「未標記」的案件
+    設定 crontab: 0 9 * * 1（每週一上午 9 點）
+    """
+    if not reporter:
+        return {"error": "報表引擎未初始化"}, 500
+
+    count = run_async(reporter.send_weekly_pending_summary())
+    return {"status": "sent", "total_pending": count}
 
 
 # ─── 啟動 ───
