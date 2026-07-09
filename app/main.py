@@ -31,7 +31,6 @@ app = Flask(__name__)
 
 # 確保目錄存在
 os.makedirs(config.IMAGE_DOWNLOAD_DIR, exist_ok=True)
-os.makedirs("data", exist_ok=True)
 
 # 初始化資料庫
 Session = init_db(config.DATABASE_URL)

@@ -14,8 +14,24 @@ class Config:
     LINE_CHANNEL_SECRET: str = os.getenv("LINE_CHANNEL_SECRET", "")
     LINE_CHANNEL_ACCESS_TOKEN: str = os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "")
 
-    # Database
-    DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///data/housing.db")
+    # Database（自動偵測 PostgreSQL > SQLite）
+    @staticmethod
+    def _build_db_url() -> str:
+        explicit = os.getenv("DATABASE_URL", "")
+        if explicit and "postgres" in explicit:
+            return explicit
+        # Zeabur PostgreSQL 服務自動注入的環境變數
+        pg_host = os.getenv("POSTGRES_HOST", "")
+        if pg_host:
+            pg_user = os.getenv("POSTGRES_USERNAME", "postgres")
+            pg_pass = os.getenv("POSTGRES_PASSWORD", "")
+            pg_port = os.getenv("POSTGRES_PORT", "5432")
+            pg_db   = os.getenv("POSTGRES_DATABASE", "postgres")
+            return f"postgresql://{pg_user}:{pg_pass}@{pg_host}:{pg_port}/{pg_db}"
+        # fallback: 本地 SQLite
+        return explicit or "sqlite:///data/housing.db"
+
+    DATABASE_URL: str = field(default_factory=_build_db_url)
 
     # OCR
     OCR_LANG: str = "ch"  # 中文 OCR

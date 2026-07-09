@@ -1,13 +1,13 @@
 """
 SQLAlchemy 資料模型 - 結構化儲存所有案件資訊
+支援 SQLite（本地開發）和 PostgreSQL（Zeabur 生產環境）
 """
 import datetime
 from sqlalchemy import (
     Column, Integer, String, Float, Text, DateTime, Boolean,
-    ForeignKey, Enum, Index, create_engine
+    ForeignKey, Enum, Index, create_engine, JSON
 )
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
-from sqlalchemy.dialects.sqlite import JSON as SQLiteJSON
 import enum
 
 Base = declarative_base()
@@ -52,7 +52,7 @@ class RawMessage(Base):
     text_content = Column(Text, default="")    # 純文字內容
     image_url = Column(String(512))            # 若有圖片，紀錄 URL
     ocr_text = Column(Text, default="")        # OCR 辨識後的文字
-    raw_payload = Column(SQLiteJSON, default={})  # LINE 原始 payload (JSON)
+    raw_payload = Column(JSON, default={})  # LINE 原始 payload (JSON)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
     # 關聯到處理後的案件
@@ -88,7 +88,7 @@ class HousingListing(Base):
 
     # 備註與原始文案
     description = Column(Text, default="")        # 完整文案
-    extracted_meta = Column(SQLiteJSON, default={}) # 其他萃取到的欄位
+    extracted_meta = Column(JSON, default={}) # 其他萃取到的欄位
 
     # 時間戳
     posted_at = Column(DateTime, default=datetime.datetime.utcnow)

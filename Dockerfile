@@ -1,9 +1,10 @@
 FROM python:3.11-slim
 
-# 安裝 tesseract OCR + 正體中文語言包（fallback 用）
+# 安裝 tesseract OCR + 正體中文語言包（fallback）+ PostgreSQL client
 RUN apt-get update && apt-get install -y --no-install-recommends \
     tesseract-ocr \
     tesseract-ocr-chi-tra \
+    libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
