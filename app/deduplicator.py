@@ -241,6 +241,59 @@ class Deduplicator:
         finally:
             session.close()
 
+    def check_duplicate_with_price(
+        self,
+        text: str,
+        group_id: str,
+        source_message_id: str,
+        address: str | None = None
+    ) -> tuple[bool, int | None, float | None]:
+        """
+        同 check_duplicate，但額外回傳舊案件的價格（用於降價判斷）。
+        回傳 (是否重複, 重複來源的案件 ID, 舊價格)
+
+        當 address 匹配到現有案件時，一併回傳舊價格供 pipeline 比對。
+        """
+        dedup_hash = self.compute_dedup_hash(text)
+
+        session = self.Session()
+        try:
+            from app.models import HousingListing
+
+            time_window = datetime.utcnow() - timedelta(
+                hours=config.DEDUP_TIME_WINDOW_HOURS
+            )
+
+            # 策略 0: 地址後綴匹配 + 回傳舊價格
+            if address and len(address) > 4:
+                addr_norm = re.sub(r"\s+", "", address)
+                suffix = _address_suffix(addr_norm)
+                if suffix and len(suffix) >= 4:
+                    existing = (
+                        session.query(HousingListing)
+                        .filter(HousingListing.address.contains(suffix))
+                        .order_by(HousingListing.posted_at.desc())
+                        .first()
+                    )
+                    if existing:
+                        logger.info(f"地址後綴重複(with price): {suffix}")
+                        return True, existing.id, existing.price
+
+            # 策略 1-2 不返回舊價格（非降價場景）
+            is_dup, dup_id = self.check_duplicate(
+                text, group_id, source_message_id, address
+            )
+            if is_dup:
+                return True, dup_id, None
+
+            return False, None, None
+
+        except Exception as e:
+            logger.error(f"去重+價格檢查失敗: {e}")
+            return False, None, None
+        finally:
+            session.close()
+
     def mark_duplicate(self, listing_id: int, duplicate_of_id: int):
         """標記案件為重複"""
         session = self.Session()

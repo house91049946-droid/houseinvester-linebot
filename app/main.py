@@ -194,7 +194,7 @@ def _process_and_notify(message_id, group_id, user_id, text, event,
         # 發送通知
         for result in results:
             logger.info(f"案件萃取成功: {json.dumps(result, ensure_ascii=False)}")
-            if reporter and result.get("category") in ("new_listing", "sold"):
+            if reporter and result.get("category") in ("new_listing", "sold", "price_drop"):
                 await reporter.notify_new_listing(result)
         return results
 

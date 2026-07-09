@@ -1,6 +1,6 @@
 """
 訊息分類器 - 判斷每則訊息屬於哪種類型
-買賣案件 / 租賃案件 / 售出訊息 / 推文廣告 / 無關訊息
+買賣案件 / 租賃案件 / 售出訊息 / 推文廣告 / 無關訊息 / 降價更新
 """
 import re
 import logging
@@ -24,8 +24,6 @@ class MessageClassifier:
     ]
 
     # 排除關鍵字 (極高機率不是案件)
-    # 格式: (關鍵字, 例外檢查函數 or None)
-    # 例外函數接收 (text, match_position) 回傳 True 表示不排除
     EXCLUDE_KEYWORDS = [
         "早安", "晚安", "吃飯", "聚餐", "生日快樂",
         "恭喜發財", "新年快樂", "政治", "天氣",
@@ -41,10 +39,31 @@ class MessageClassifier:
         (re.compile(r"(?:^|\s)\+1(?:\s|$)"), True),
     ]
 
+    # 買方需求關鍵字（非賣方案件，歸類為 inquiry）
+    BUYER_REQUEST_KEYWORDS = [
+        "買需", "客需", "求購", "徵求", "代尋",
+        "想買", "誠買", "買方", "急尋",
+    ]
+
+    # 新聞摘要模式（每日新聞摘要有大量偽價格地址）
+    NEWS_SUMMARY_PATTERNS = [
+        re.compile(r"【\d{2}月\d{2}日】.*新聞"),
+        re.compile(r"新聞摘要"),
+        re.compile(r"☑️.*新聞"),
+        re.compile(r"中部各大報.*房產新聞"),
+        re.compile(r"等[\.．]{2,}\d+則新聞"),
+    ]
+
+    # 降價關鍵字
+    PRICE_DROP_KEYWORDS = [
+        "降價", "調降", "下修", "下殺",
+        "降售", "急售", "賠售", "砍價",
+    ]
+
     def classify(self, text: str) -> str:
         """
         分類訊息類型
-        回傳: new_listing / sold / promotion / inquiry / irrelevant
+        回傳: new_listing / sold / price_drop / promotion / inquiry / irrelevant
         """
         text = TextNormalizer.normalize(text)
 
@@ -54,6 +73,16 @@ class MessageClassifier:
         # 0. 排除明顯無關訊息
         if self._is_excluded(text):
             return "irrelevant"
+
+        # 0.5 排除買方需求（非賣方/出租方案件）
+        if self._is_buyer_request(text):
+            logger.info(f"歸類為買方需求: {text[:60]}...")
+            return "inquiry"
+
+        # 0.6 排除新聞摘要
+        if self._is_news_summary(text):
+            logger.info(f"歸類為新聞摘要，跳過")
+            return "promotion"
 
         # 1. 售出/成交訊息
         if extractor.is_sold_message(text):
@@ -69,6 +98,12 @@ class MessageClassifier:
         has_strong_signal = any(sig in text for sig in self.STRONG_SIGNALS)
 
         if (has_listing_signals and is_long_enough) or has_strong_signal:
+            # 降價訊息
+            if any(kw in text for kw in self.PRICE_DROP_KEYWORDS):
+                listing_type = extractor._detect_listing_type(text)
+                if listing_type:
+                    return "price_drop"
+
             # 用 extractor 確認是買賣還是租賃
             listing_type = extractor._detect_listing_type(text)
             if listing_type:
@@ -84,6 +119,25 @@ class MessageClassifier:
         # 5. 其他
         return "irrelevant"
 
+    def _is_buyer_request(self, text: str) -> bool:
+        """檢查是否為買方需求訊息（非賣方案件）"""
+        if not text:
+            return False
+        # 買方關鍵字出現 + 訊息不長 → 高機率是買方需求
+        buyer_hits = sum(1 for kw in self.BUYER_REQUEST_KEYWORDS if kw in text)
+        if buyer_hits >= 1 and len(text) < 200:
+            return True
+        return False
+
+    def _is_news_summary(self, text: str) -> bool:
+        """檢查是否為每日新聞摘要"""
+        if not text:
+            return False
+        for pat in self.NEWS_SUMMARY_PATTERNS:
+            if pat.search(text):
+                return True
+        return False
+
     def _count_listing_signals(self, text: str) -> int:
         """計算文字中出現的房產相關訊號數"""
         count = 0
@@ -94,7 +148,6 @@ class MessageClassifier:
             r"總價", r"售價", r"租金", r"月租",
         ]
         for pat in price_patterns:
-            import re
             if re.search(pat, text):
                 count += 1
                 break
@@ -112,7 +165,6 @@ class MessageClassifier:
             count += 1
 
         # 樓層訊號
-        import re
         if re.search(r"\d+[FfＦｆ樓]", text):
             count += 1
 

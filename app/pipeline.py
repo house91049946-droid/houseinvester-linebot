@@ -171,8 +171,8 @@ class ProcessingPipeline:
         category = classifier.classify(normalized)
         logger.info(f"訊息分類: {category}")
 
-        # 只處理案件和售出訊息
-        if category not in ("new_listing", "sold"):
+        # 只處理案件、售出和降價訊息
+        if category not in ("new_listing", "sold", "price_drop"):
             return None
 
         # Step 3: NLP 萃取
@@ -180,19 +180,63 @@ class ProcessingPipeline:
 
         # 信心度太低就跳過
         if extracted.confidence < 0.3:
-            logger.info(f"萃取信心度太低 ({extracted.confidence:.2f})，跳過")
+            logger.info(f"萃取信心度太低 ({extracted.confidence:.2f})，跳過: {message_id}")
             return None
 
-        # Step 4: 去重檢查
-        is_dup, dup_of_id = self.deduplicator.check_duplicate(
+        # Step 4: 去重檢查（降價訊息先用寬鬆去重，看是否同地址 + 更低價格）
+        is_dup, dup_of_id, old_price = self.deduplicator.check_duplicate_with_price(
             text=normalized,
             group_id=group_id,
             source_message_id=message_id,
             address=getattr(extracted, 'address', None),
         )
+
+        # 降價判斷：地址匹配且新價格低於舊價格
+        is_price_drop = False
+        if is_dup and category == "price_drop" and extracted.price_wan and old_price:
+            if extracted.price_wan < old_price:
+                is_price_drop = True
+                logger.info(f"降價: {extracted.price_wan}萬 < {old_price}萬 (舊), 地址: {getattr(extracted, 'address', '')}")
+
+        # 降價通知：儲存並回傳
+        if is_price_drop:
+            listing = self._save_listing(
+                raw_message=raw_msg,
+                extracted=extracted,
+                category="price_drop",
+                normalized_text=normalized,
+                is_duplicate=False,
+            )
+            self._save_contact_from_text(listing, text)
+            result = {
+                "listing_id": listing.id,
+                "category": "price_drop",
+                "listing_type": extracted.listing_type,
+                "property_type": extracted.property_type,
+                "price_wan": extracted.price_wan,
+                "old_price_wan": old_price,
+                "unit_price_wan_per_ping": extracted.unit_price_wan_per_ping,
+                "size_ping": extracted.size_ping,
+                "floor": extracted.floor,
+                "rooms": extracted.rooms,
+                "address": extracted.address,
+                "community": extracted.community,
+                "has_parking": extracted.has_parking,
+                "has_furniture": extracted.has_furniture,
+                "deposit": extracted.deposit,
+                "management_fee": extracted.management_fee,
+                "description": text,
+                "confidence": extracted.confidence,
+                "contact_name": self._extract_contact_name(text),
+                "contact_phone": self._extract_contact_phone(text),
+                "contact_line": self._extract_contact_line(text),
+                "contact_agency": self._extract_contact_agency(text),
+            }
+            return result
+
+        # 真正重複不通知
         if is_dup:
             logger.info(f"偵測到重複案件，來源 ID: {dup_of_id}")
-            # 仍然儲存，但標記為重複
             listing = self._save_listing(
                 raw_message=raw_msg,
                 extracted=extracted,
@@ -201,7 +245,7 @@ class ProcessingPipeline:
                 is_duplicate=True,
                 duplicate_of_id=dup_of_id,
             )
-            return None  # 不回傳重複案件
+            return None
 
         # Step 5: 儲存結構化案件
         listing = self._save_listing(

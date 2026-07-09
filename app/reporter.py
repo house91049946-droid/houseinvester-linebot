@@ -120,11 +120,15 @@ def format_single_listing(listing_data: dict) -> list[dict]:
     # 已售出特殊標記
     if cat == "sold":
         lines.append("🎊 已成交")
+    elif cat == "price_drop":
+        lines.append("📉 降價通知")
 
     # 標題
     title_parts = [type_label]
     if cat == "sold":
         title_parts.append("🎉")
+    elif cat == "price_drop":
+        title_parts.append("⬇️")
     title = " ".join(title_parts)
     lines.append(title)
 
@@ -161,9 +165,13 @@ def format_single_listing(listing_data: dict) -> list[dict]:
 
     # 價格（根據買賣/租賃不同顯示方式）
     price = listing_data.get("price_wan")
+    old_price = listing_data.get("old_price_wan")
     if price:
         if lt == "rent":
             lines.append(f"💰 月租 {price:.1f} 萬")
+        elif cat == "price_drop" and old_price:
+            drop = old_price - price
+            lines.append(f"💰 {old_price:.0f} 萬 → {price:.0f} 萬 (降 {drop:.0f} 萬)")
         else:
             lines.append(f"💰 總價 {price:.0f} 萬")
 
