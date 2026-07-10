@@ -413,6 +413,10 @@ def get_listings():
                 "contact_phone": contact.phone if contact else None,
                 "contact_line": contact.line_id if contact else None,
                 "contact_agency": contact.company if contact else None,
+                # 萃取品質欄位
+                "has_address": bool(l.has_address),
+                "has_price": bool(l.has_price),
+                "has_contact": bool(l.has_contact),
             })
 
         return {
@@ -661,22 +665,47 @@ def debug_recent_users():
 
 @app.route("/dashboard", methods=["GET"])
 def dashboard():
-    """數據看板"""
+    """數據看板（若設定 DASHBOARD_TOKEN 則需 ?token=xxx 驗證）"""
+    # Token 驗證
+    token = config.DASHBOARD_TOKEN
+    if token:
+        req_token = request.args.get("token", "")
+        if req_token != token:
+            return "Unauthorized: 請加上 ?token=你的token", 401
+
     from app.dashboard import DASHBOARD_HTML
     return DASHBOARD_HTML, 200, {"Content-Type": "text/html; charset=utf-8"}
 
 
 @app.route("/images/<message_id>.jpg", methods=["GET"])
 def serve_image(message_id):
-    """提供已下載圖片供 LINE 訊息使用（防止目錄遍歷攻擊）"""
+    """提供已下載圖片供 LINE 訊息使用（本機檔案 → DB fallback）"""
     from flask import send_file
+    import io
     safe_id = message_id.replace("/", "").replace("\\", "").replace("..", "")
-    # 使用絕對路徑
+
+    # 1) 先嘗試本機檔案
     img_dir = os.path.join(app.root_path, "..", config.IMAGE_DOWNLOAD_DIR)
     path = os.path.abspath(os.path.join(img_dir, f"{safe_id}.jpg"))
-    if not os.path.isfile(path):
-        abort(404)
-    return send_file(path, mimetype="image/jpeg")
+    if os.path.isfile(path):
+        return send_file(path, mimetype="image/jpeg")
+
+    # 2) DB 備援（圖片不會隨容器消失）
+    from app.models import ImageBlob
+    session = Session()
+    try:
+        blob = session.query(ImageBlob).filter(
+            ImageBlob.message_id == safe_id
+        ).first()
+        if blob and blob.data:
+            return send_file(
+                io.BytesIO(blob.data),
+                mimetype=blob.mimetype or "image/jpeg",
+            )
+    finally:
+        session.close()
+
+    abort(404)
 
 
 # ─── 報表摘要 API ───

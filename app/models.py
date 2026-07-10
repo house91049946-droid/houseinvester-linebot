@@ -4,7 +4,7 @@ SQLAlchemy 資料模型 - 結構化儲存所有案件資訊
 """
 import datetime
 from sqlalchemy import (
-    Column, Integer, String, Float, Text, DateTime, Boolean,
+    Column, Integer, String, Float, Text, DateTime, Boolean, LargeBinary,
     ForeignKey, Enum, Index, create_engine, JSON
 )
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
@@ -51,6 +51,7 @@ class RawMessage(Base):
     message_type = Column(String(16))          # text, image, video, file
     text_content = Column(Text, default="")    # 純文字內容
     image_url = Column(String(512))            # 若有圖片，紀錄 URL
+    image_hash = Column(String(64), nullable=True, index=True)  # 圖片 MD5 去重
     ocr_text = Column(Text, default="")        # OCR 辨識後的文字
     raw_payload = Column(JSON, default={})  # LINE 原始 payload (JSON)
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
@@ -102,6 +103,11 @@ class HousingListing(Base):
     # 處理狀態（操作者標記是否已處理）
     is_processed = Column(Boolean, default=False)
 
+    # 萃取完整度（儀表板品質追蹤）
+    has_address = Column(Boolean, default=False)   # 有地址
+    has_price = Column(Boolean, default=False)      # 有價格
+    has_contact = Column(Boolean, default=False)    # 有聯絡資訊
+
     # 關聯回原始訊息
     source_message = relationship("RawMessage", back_populates="listing")
 
@@ -136,6 +142,17 @@ class InterestStatus(Base):
     set_at = Column(DateTime, default=datetime.datetime.utcnow)
     reminder_sent_at = Column(DateTime, nullable=True)   # 上次提醒時間
     remark = Column(Text, default="")                    # 備註
+
+
+class ImageBlob(Base):
+    """圖片持久化儲存（存於 PostgreSQL，不隨容器消失）"""
+    __tablename__ = "image_blobs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    message_id = Column(String(64), unique=True, index=True, nullable=False)
+    data = Column(LargeBinary, nullable=False)           # 圖片二進位內容
+    mimetype = Column(String(32), default="image/jpeg")
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
 
 # ----- 資料庫連線 -----

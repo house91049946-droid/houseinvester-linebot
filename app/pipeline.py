@@ -293,25 +293,61 @@ class ProcessingPipeline:
         raw_payload: dict,
     ) -> Optional[dict]:
         """
-        處理圖片訊息：下載 → GPT Vision → tesseract OCR fallback
+        處理圖片訊息：下載 → MD5 去重檢查 → GPT Vision → tesseract OCR fallback
 
         Returns:
             如果萃取到案件，回傳 dict；否則回傳 None
         """
-        # Step 0: 儲存原始訊息
+        import hashlib
+        from app.models import ImageBlob
+
+        # Step 0: 先下載圖片，計算 MD5 hash
+        image_path, ocr_text, gpt_result = await ocr_engine.process_line_image(
+            message_id=message_id,
+            image_url=image_url,
+        )
+
+        # 計算圖片 MD5（用於去重）
+        image_hash = ""
+        if image_path and os.path.isfile(image_path):
+            with open(image_path, "rb") as f:
+                image_hash = hashlib.md5(f.read()).hexdigest()
+
+            # 圖片存進 PostgreSQL（持久化，不隨容器消失）
+            try:
+                with open(image_path, "rb") as f:
+                    img_data = f.read()
+                session = self.Session()
+                existing_blob = session.query(ImageBlob).filter(
+                    ImageBlob.message_id == message_id
+                ).first()
+                if not existing_blob:
+                    session.add(ImageBlob(
+                        message_id=message_id,
+                        data=img_data,
+                        mimetype="image/jpeg",
+                    ))
+                    session.commit()
+                session.close()
+            except Exception as e:
+                logger.warning(f"圖片存入 DB 失敗: {e}")
+
+        # MD5 去重檢查
+        if image_hash:
+            dup_listing_id = self._check_image_hash_exists(image_hash)
+            if dup_listing_id:
+                logger.info(f"圖片去重: hash={image_hash[:12]}, 既有案件={dup_listing_id}")
+                return None  # 已處理過的圖片，不重複萃取
+
+        # Step 1: 儲存原始訊息（含 hash）
         raw_msg = self._save_raw_message(
             message_id=message_id,
             group_id=group_id,
             user_id=user_id,
             message_type="image",
             image_url=image_url,
+            image_hash=image_hash,
             raw_payload=raw_payload,
-        )
-
-        # Step 1: 下載 + GPT Vision / OCR
-        image_path, ocr_text, gpt_result = await ocr_engine.process_line_image(
-            message_id=message_id,
-            image_url=image_url,
         )
 
         # 更新原始訊息中的 OCR 文字
@@ -509,6 +545,7 @@ class ProcessingPipeline:
                 message_type=kwargs["message_type"],
                 text_content=kwargs.get("text_content", ""),
                 image_url=kwargs.get("image_url", ""),
+                image_hash=kwargs.get("image_hash", ""),
                 raw_payload=kwargs.get("raw_payload", {}),
             )
             session.add(msg)
@@ -519,6 +556,38 @@ class ProcessingPipeline:
             session.rollback()
             logger.error(f"儲存原始訊息失敗: {e}")
             raise
+        finally:
+            session.close()
+
+    def _check_image_hash_exists(self, image_hash: str) -> Optional[int]:
+        """檢查同 hash 圖片是否已處理過，回傳既有案件的 listing_id"""
+        if not image_hash:
+            return None
+        from app.models import RawMessage, HousingListing
+        session = self.Session()
+        try:
+            existing = (
+                session.query(RawMessage)
+                .filter(RawMessage.image_hash == image_hash)
+                .first()
+            )
+            if existing and existing.listing:
+                return existing.listing.id
+            return None
+        finally:
+            session.close()
+
+    def _set_raw_image_hash(self, raw_msg_id: int, image_hash: str):
+        """事後補上圖片 hash"""
+        session = self.Session()
+        try:
+            session.query(RawMessage).filter(RawMessage.id == raw_msg_id).update(
+                {"image_hash": image_hash}
+            )
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            logger.error(f"更新圖片 hash 失敗: {e}")
         finally:
             session.close()
 
@@ -580,6 +649,9 @@ class ProcessingPipeline:
                 is_duplicate=is_duplicate,
                 duplicate_of_id=duplicate_of_id,
                 posted_at=datetime.datetime.utcnow(),
+                has_address=bool(getattr(extracted, 'address', None)),
+                has_price=bool(getattr(extracted, 'price_wan', None)),
+                has_contact=False,  # 之後由 _save_contact 設為 True
             )
             session.add(listing)
             session.commit()
@@ -603,7 +675,7 @@ class ProcessingPipeline:
         if not any(contact_data.values()):
             return
 
-        from app.models import ContactInfo
+        from app.models import ContactInfo, HousingListing
         session = self.Session()
         try:
             existing = (
@@ -615,6 +687,10 @@ class ProcessingPipeline:
                 return
             contact = ContactInfo(listing_id=listing.id, **contact_data)
             session.add(contact)
+            # 標記有聯絡資訊
+            session.query(HousingListing).filter(HousingListing.id == listing.id).update(
+                {"has_contact": True}
+            )
             session.commit()
         except Exception as e:
             session.rollback()
@@ -677,7 +753,7 @@ class ProcessingPipeline:
         if not any(contact_data.values()):
             return
 
-        from app.models import ContactInfo
+        from app.models import ContactInfo, HousingListing
         session = self.Session()
         try:
             existing = (
@@ -689,6 +765,10 @@ class ProcessingPipeline:
                 return
             contact = ContactInfo(listing_id=listing.id, **contact_data)
             session.add(contact)
+            # 標記有聯絡資訊
+            session.query(HousingListing).filter(HousingListing.id == listing.id).update(
+                {"has_contact": True}
+            )
             session.commit()
         except Exception as e:
             session.rollback()

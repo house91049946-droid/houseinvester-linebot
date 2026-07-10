@@ -90,7 +90,7 @@ class Config:
 
     # ─── GPT Vision ───
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
-    OPENAI_MODEL: str = "gpt-4o"  # 支援 vision 的模型
+    OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")  # 預設 mini 省錢，可設 gpt-4o
 
     # ─── DeepSeek（文字萃取） ───
     DEEPSEEK_API_KEY: str = os.getenv("DEEPSEEK_API_KEY", "")
@@ -99,6 +99,9 @@ class Config:
 
     # 對外公開 URL（用於圖片轉發）
     PUBLIC_BASE_URL: str = os.getenv("PUBLIC_BASE_URL", "")
+
+    # 儀表板存取 token（設定了才需要驗證）
+    DASHBOARD_TOKEN: str = os.getenv("DASHBOARD_TOKEN", "")
 
 
 config = Config()
