@@ -157,8 +157,40 @@ class ImageBlob(Base):
 
 # ----- 資料庫連線 -----
 
+def _migrate_db(engine):
+    """自動補上 SQLAlchemy create_all 不會處理的新欄位（適用於現有 PostgreSQL）"""
+    from sqlalchemy import text, inspect
+    inspector = inspect(engine)
+
+    # 檢查 housing_listings 是否有 has_address / has_price / has_contact
+    if "housing_listings" in inspector.get_table_names():
+        cols = {c["name"] for c in inspector.get_columns("housing_listings")}
+        for col_name in ("has_address", "has_price", "has_contact"):
+            if col_name not in cols:
+                with engine.connect() as conn:
+                    conn.execute(text(
+                        f"ALTER TABLE housing_listings ADD COLUMN {col_name} BOOLEAN DEFAULT FALSE"
+                    ))
+                    conn.commit()
+
+    # 檢查 raw_messages 是否有 image_hash
+    if "raw_messages" in inspector.get_table_names():
+        cols = {c["name"] for c in inspector.get_columns("raw_messages")}
+        if "image_hash" not in cols:
+            with engine.connect() as conn:
+                conn.execute(text(
+                    "ALTER TABLE raw_messages ADD COLUMN image_hash VARCHAR(64)"
+                ))
+                conn.commit()
+
+    # 檢查 image_blobs 表是否存在
+    if "image_blobs" not in inspector.get_table_names():
+        ImageBlob.__table__.create(engine, checkfirst=True)
+
+
 def init_db(db_url: str):
     engine = create_engine(db_url, echo=False)
     Base.metadata.create_all(engine)
+    _migrate_db(engine)
     Session = sessionmaker(bind=engine)
     return Session
